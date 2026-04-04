@@ -63,8 +63,16 @@ export const AuthProvider = ({ children }) => {
 
   // Skip manual signIn (legacy local storage auth removed for consistency)
   const signIn = (name, email) => {
-    // This is now deprecated in favor of Firebase Auth
+    // This is now deprecated in favor of Firebase Auth but still functional for testing / demo users
     console.warn("Manual sign-in is deprecated. Use loginWithGoogle.");
+    const mockUser = {
+      uid: 'mock_' + Date.now(),
+      name: name || email.split('@')[0],
+      email: email,
+      avatar: null,
+      isMock: true,
+    };
+    setUser(mockUser);
   };
 
   // Sign out

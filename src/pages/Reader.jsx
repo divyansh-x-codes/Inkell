@@ -3,6 +3,9 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { articles as mockArticles } from '../data';
 import BottomNav from '../components/BottomNav';
 import { useAuth } from '../context/AuthContext';
+import { db } from '../firebase';
+import { doc, onSnapshot } from 'firebase/firestore';
+import { toggleLike, toggleSave, isBlogLiked, isBlogSaved } from '../utils/firebaseData';
 
 function Poll({ poll, showToast }) {
   const [voted, setVoted] = useState(false);
@@ -38,35 +41,114 @@ export default function Reader({ showToast }) {
   const [article, setArticle] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  const getLS  = (k) => { try { return JSON.parse(localStorage.getItem(k) || '{}'); } catch { return {}; } };
-  const setLS  = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} };
-
   const [liked, setLiked] = useState(false);
   const [saved, setSaved] = useState(false);
   const [likesCount, setLikesCount] = useState(0);
 
+  // 1. Real-time article data subscription (Likes/Comments/Content)
   useEffect(() => {
-    const art = mockArticles.find(a => String(a.id) === String(id));
-    if (art) {
-      setArticle(art);
-      setLikesCount(parseInt(art.likes) || 0);
-      setLiked(!!getLS('inkwell_likes')[art.id]);
-      setSaved(!!getLS('inkwell_saves')[art.id]);
-    }
-    setLoading(false);
+    if (!id) return;
+    setLoading(true);
+
+    const unsubscribe = onSnapshot(doc(db, 'blogs', id), (snap) => {
+      if (snap.exists()) {
+        const data = { id: snap.id, ...snap.data() };
+        setArticle(data);
+        setLikesCount(data.likesCount || 0);
+        setLoading(false);
+      } else {
+        // Fallback to mock if not found in Firestore
+        const art = mockArticles.find(a => String(a.id) === String(id));
+        if (art) {
+          setArticle(art);
+          setLikesCount(parseInt(art.likes) || 0);
+        }
+        setLoading(false);
+      }
+    }, (err) => {
+      console.error("Real-time reader error:", err);
+      setLoading(false);
+    });
+
+    return () => unsubscribe();
   }, [id]);
 
+  // 2. Load user-specific interaction status (Likes/Saves) from Firestore
   useEffect(() => {
-    if (!article) return;
-    try {
-      const reads = JSON.parse(localStorage.getItem('inkwell_reads') || '{}');
-      reads[article.id] = true;
-      localStorage.setItem('inkwell_reads', JSON.stringify(reads));
-    } catch {}
-  }, [article]);
+    if (user?.uid && id) {
+      isBlogLiked(id, user.uid).then(setLiked);
+      isBlogSaved(id, user.uid).then(setSaved);
+    }
+  }, [user, id]);
 
-  if (loading) return null;
-  if (!article) return <div style={{ color: 'white', padding: '20px' }}>Article not found</div>;
+  const handleLike = async () => {
+    if (!user) {
+      showToast('Login to like articles');
+      navigate('/login');
+      return;
+    }
+
+    // --- OPTIMISTIC UPDATE ---
+    const wasLiked = liked;
+    const newLiked = !wasLiked;
+    setLiked(newLiked);
+    setLikesCount(prev => newLiked ? prev + 1 : Math.max(0, prev - 1));
+
+    const result = await toggleLike(id, user.uid);
+    if (result.error) {
+      showToast('Like failed');
+      // Rollback
+      setLiked(wasLiked);
+      setLikesCount(prev => wasLiked ? prev + 1 : Math.max(0, prev - 1));
+    }
+  };
+
+  const handleSave = async () => {
+    if (!user) {
+      showToast('Login to save articles');
+      navigate('/login');
+      return;
+    }
+
+    // --- OPTIMISTIC UPDATE ---
+    const wasSaved = saved;
+    const newSaved = !wasSaved;
+    setSaved(newSaved);
+    showToast(newSaved ? 'Saved to reading list' : 'Removed from saved');
+
+    const result = await toggleSave(id, user.uid);
+    if (result.error) {
+      showToast('Save failed');
+      // Rollback
+      setSaved(wasSaved);
+    }
+  };
+
+  if (loading && !article) return (
+    <div style={{ background: '#121212', height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#666' }}>
+      Loading story...
+    </div>
+  );
+
+  if (!article) return (
+    <div style={{ background: '#121212', height: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '40px', textAlign: 'center' }}>
+      <div style={{ fontSize: '3rem', marginBottom: '20px' }}>📄🚫</div>
+      <h2 style={{ color: 'white', marginBottom: '12px' }}>Article not found</h2>
+      <p style={{ color: '#666', marginBottom: '32px' }}>This story might have been removed or the link is incorrect.</p>
+      <button
+        onClick={() => navigate('/')}
+        style={{
+          background: 'var(--orange)', color: 'white', border: 'none',
+          padding: '14px 28px', borderRadius: '12px', fontWeight: 700,
+          cursor: 'pointer', fontFamily: "'DM Sans', sans-serif"
+        }}
+      >
+        Back to Home
+      </button>
+    </div>
+  );
+
+  const authorName = article.authorName || article.name || 'Anonymous';
 
   const getInitials = (name) => {
     if (!name) return 'A';
@@ -77,53 +159,30 @@ export default function Reader({ showToast }) {
     return name[0].toUpperCase();
   };
 
-  const handleLike = () => {
-    if (!article) return;
-    const next  = !liked;
-    const nextN = next ? likesCount + 1 : likesCount - 1;
-    setLiked(next);
-    setLikesCount(nextN);
-    
-    // Sync to local for now (Supabase sync for likes can be added in schema later)
-    const likes  = getLS('inkwell_likes');
-    next ? (likes[article.id] = true) : delete likes[article.id];
-    setLS('inkwell_likes', likes);
-  };
-
-  const handleSave = () => {
-    if (!article) return;
-    const next = !saved;
-    setSaved(next);
-    const saves = getLS('inkwell_saves');
-    next ? (saves[article.id] = true) : delete saves[article.id];
-    setLS('inkwell_saves', saves);
-    showToast(next ? 'Saved to reading list' : 'Removed from saved');
-  };
-
-  const authorName = article.author_name || article.name || 'Anonymous';
-
   return (
     <div className="view active reader-page">
       <div className="app-shell" style={{ background: '#121212', position: 'relative' }}>
-        
+
         <div className="reader-topbar">
           <button className="tb-circle-btn" onClick={() => navigate(-1)}>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
               <polyline points="15 18 9 12 15 6"></polyline>
             </svg>
           </button>
-          <div className="tb-right-actions">
-            <button className="tb-circle-btn">
-              <svg viewBox="0 0 24 24" fill="currentColor">
-                <polygon points="5 3 19 12 5 21 5 3"></polygon>
-              </svg>
-            </button>
-            <button className="tb-circle-btn">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M21 8v13H3V8M1 3h22v5H1zM10 12h4"></path>
-              </svg>
-            </button>
-            <button className="tb-circle-btn">
+          <div className="tb-right-actions" style={{ gap: 8 }}>
+            {user && article && user.uid === article.authorId && (
+              <button
+                className="tb-circle-btn edit-btn"
+                onClick={() => navigate(`/edit-article/${article.id}`)}
+                style={{ color: 'var(--orange)' }}
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ width: 18, height: 18 }}>
+                  <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                  <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4L18.5 2.5z"></path>
+                </svg>
+              </button>
+            )}
+            <button className="tb-circle-btn" onClick={() => showToast('Options')}>
               <svg viewBox="0 0 24 24" fill="currentColor">
                 <circle cx="5" cy="12" r="1.5"></circle>
                 <circle cx="12" cy="12" r="1.5"></circle>
@@ -132,56 +191,54 @@ export default function Reader({ showToast }) {
             </button>
           </div>
         </div>
-        
+
         <div className="reader-scroll-area">
-          <div className="reader-pub">{article.pub_date || article.pub || article.category}</div>
+          <div className="reader-pub">{article.category || 'Article'}</div>
           <h1 className="reader-title">{article.title}</h1>
           <p className="reader-tagline">{article.tagline}</p>
-          
-          <div className="reader-author-row" onClick={() => navigate(`/profile/${encodeURIComponent(authorName)}`)} style={{cursor: 'pointer'}}>
+
+          <div className="reader-author-row" onClick={() => navigate(`/profile/${encodeURIComponent(authorName)}`, { state: { authorId: article.authorId } })} style={{ cursor: 'pointer' }}>
             <div className="reader-author-details">
               <div className="reader-author-name">{authorName.toUpperCase()}</div>
               <div className="reader-author-date">
-                {new Date(article.created_at || Date.now()).toLocaleDateString() || article.date} 2026 AT 5:33 PM
+                {article.createdAt?.toDate ? new Date(article.createdAt.toDate()).toLocaleDateString() : 'Published recently'}
               </div>
             </div>
-            <div className="reader-avatar" style={{background: '#cc4400'}}>
+            <div className="reader-avatar" style={{ background: '#cc4400' }}>
               {getInitials(authorName)}
             </div>
           </div>
-          
+
           <div className="reader-divider"></div>
-          
-          {article.hasPoll && article.poll && <Poll poll={article.poll} showToast={showToast} />}
-          
+
           <div className="reader-body">
-            {(article.cover_image || article.coverImage) && <img src={article.cover_image || article.coverImage} className="reader-hero-img" alt="cover" />}
-            <div style={{ whiteSpace: 'pre-wrap', lineHeight: 1.8, color: '#ccc' }}>{article.content || article.body || ''}</div>
+            {(article.coverImage || article.cover_image) && <img src={article.coverImage || article.cover_image} className="reader-hero-img" alt="cover" />}
+            <div style={{ whiteSpace: 'pre-wrap', lineHeight: 1.8, color: '#ccc', paddingBottom: '120px' }}>{article.content || article.body || ''}</div>
           </div>
         </div>
 
         <div className="reader-floating-bar-wrapper">
           <div className="reader-floating-pill">
-            <button className="floating-action-btn" onClick={handleLike}>
-              <svg viewBox="0 0 24 24" fill={liked ? "var(--orange)" : "none"} stroke={liked ? "var(--orange)" : "currentColor"} strokeWidth="2">
-                <path d="M20.8 4.6a5.5 5.5 0 0 0-7.7 0l-1.1 1-1.1-1a5.5 5.5 0 0 0-7.8 7.8l1.1 1.1L12 21.2l7.8-7.8 1.1-1.1a5.5 5.5 0 0 0 0-7.8z"></path>
+            <button className={`floating-action-btn ${liked ? 'liked' : ''}`} onClick={handleLike}>
+              <svg viewBox="0 0 24 24" fill={liked ? 'var(--heart-red)' : 'none'} stroke={liked ? 'var(--heart-red)' : 'currentColor'} strokeWidth="1.75">
+                <path d="M20.8 4.6a5.5 5.5 0 0 0-7.7 0l-1.1 1-1.1-1a5.5 5.5 0 0 0-7.8 7.8l1.1 1.1L12 21.2l7.8-7.8 1.1-1.1a5.5 5.5 0 0 0 0-7.8z" />
               </svg>
               <span>{likesCount}</span>
             </button>
             <button className="floating-action-btn" onClick={() => navigate(`/comments/${article.id}`)}>
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M21 15v4a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v10z"></path>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75">
+                <path d="M21 15v4a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v10z" />
               </svg>
-              <span>{article.comments_count || 0}</span>
+              <span>{article.commentsCount || 0}</span>
             </button>
-            <button className="floating-action-btn" onClick={handleSave}>
-              <svg viewBox="0 0 24 24" fill={saved ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2">
-                <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path>
+            <button className={`floating-action-btn ${saved ? 'saved' : ''}`} onClick={handleSave}>
+              <svg viewBox="0 0 24 24" fill={saved ? 'var(--save-blue)' : 'none'} stroke={saved ? 'var(--save-blue)' : 'currentColor'} strokeWidth="1.75">
+                <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
               </svg>
             </button>
-            <button className="floating-action-btn" onClick={() => showToast('Shared link')}>
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8M16 6l-4-4-4 4M12 2v13"></path>
+            <button className="floating-action-btn" onClick={() => { navigator.clipboard.writeText(window.location.href); showToast('Link copied!'); }}>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75">
+                <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8M16 6l-4-4-4 4M12 2v13" />
               </svg>
             </button>
           </div>

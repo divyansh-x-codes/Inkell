@@ -1,4 +1,4 @@
-import { BrowserRouter as Router, Routes, Route, useLocation } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { useState, useEffect } from 'react';
 import Welcome from './pages/Welcome';
 import Login from './pages/Login';
@@ -43,16 +43,18 @@ function App() {
             <Route path="/article/:id" element={<Reader showToast={showToast} />} />
             <Route path="/comments/:id" element={<Comments showToast={showToast} />} />
             <Route path="/profile/:username" element={<Profile showToast={showToast} />} />
+            <Route path="/profile" element={<Navigate to="/my-profile" replace />} />
             <Route path="/conversations" element={<Conversations showToast={showToast} />} />
             <Route path="/chat/:id" element={<ChatThread showToast={showToast} />} />
             <Route path="/my-profile" element={<MyProfile showToast={showToast} />} />
             <Route path="/edit-profile" element={<EditProfile showToast={showToast} />} />
+            <Route path="/edit-article/:id" element={<AddArticle showToast={showToast} />} />
             <Route path="/saved" element={<Saved showToast={showToast} />} />
             <Route path="/add-article" element={<AddArticle showToast={showToast} />} />
           </Routes>
         </div>
       </div>
-      
+
       <div className={`toast ${toastMsg ? 'show' : ''}`} id="toast-el">
         {toastMsg}
       </div>

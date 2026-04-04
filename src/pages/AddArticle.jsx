@@ -1,13 +1,15 @@
-import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useState, useEffect } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { createBlog } from '../utils/firebaseData';
+import { createBlog, updateBlog, getBlog } from '../utils/firebaseData';
 
 const CATEGORIES = ['Technology', 'Design', 'Culture', 'Digital Media', 'Politics', 'Emerging Tech', 'Productivity', 'Science', 'Health', 'Business'];
 
 export default function AddArticle({ showToast }) {
   const navigate = useNavigate();
+  const { id } = useParams();
   const { user } = useAuth();
+  const isEdit = !!id;
 
   const [title, setTitle] = useState('');
   const [tagline, setTagline] = useState('');
@@ -16,8 +18,29 @@ export default function AddArticle({ showToast }) {
   const [coverImage, setCoverImage] = useState('');
   const [readTime, setReadTime] = useState('5 min read');
   const [publishing, setPublishing] = useState(false);
+  const [fetching, setFetching] = useState(isEdit);
 
-  const handlePublish = async () => {
+  // Load article if in edit mode
+  useEffect(() => {
+    if (isEdit) {
+      getBlog(id).then(data => {
+        if (data) {
+          setTitle(data.title || '');
+          setTagline(data.tagline || '');
+          setBody(data.content || '');
+          setCategory(data.category || 'Technology');
+          setCoverImage(data.coverImage || '');
+          setReadTime(data.readTime || '5 min read');
+        } else {
+          showToast("Article not found");
+          navigate('/home');
+        }
+        setFetching(false);
+      });
+    }
+  }, [id, isEdit]);
+
+  const handleAction = async () => {
     if (!title.trim() || !body.trim()) {
       showToast('Title and content are required');
       return;
@@ -29,26 +52,41 @@ export default function AddArticle({ showToast }) {
     }
 
     setPublishing(true);
-    showToast('Publishing...');
+    showToast(isEdit ? 'Saving changes...' : 'Publishing...');
 
-    const { id, error } = await createBlog({
+    const blogData = {
       title: title.trim(),
       tagline: tagline.trim(),
       content: body.trim(),
       category,
-      coverImage: coverImage.trim() || `https://picsum.photos/seed/${Date.now()}/800/400`,
+      coverImage: coverImage.trim() || (isEdit ? '' : `https://picsum.photos/seed/${Date.now()}/800/400`),
       readTime,
-    }, user);
+    };
+
+    let result;
+    if (isEdit) {
+      result = await updateBlog(id, blogData);
+    } else {
+      result = await createBlog(blogData, user);
+    }
 
     setPublishing(false);
 
-    if (error) {
-      showToast('Failed to publish: ' + error.message);
+    if (result.error) {
+      showToast('Failed: ' + result.error.message);
     } else {
-      showToast('🎉 Article published!');
-      navigate('/home');
+      showToast(isEdit ? '✅ Changes saved!' : '🎉 Article published!');
+      navigate(isEdit ? `/article/${id}` : '/home');
     }
   };
+
+  if (fetching) {
+    return (
+      <div style={{ background: '#0d0d0d', height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#666' }}>
+        Loading article data...
+      </div>
+    );
+  }
 
   return (
     <div className="view active" style={{ background: '#0d0d0d', minHeight: '100%' }}>
@@ -68,10 +106,10 @@ export default function AddArticle({ showToast }) {
           Back
         </button>
         <div style={{ fontFamily: "'Playfair Display', serif", fontSize: '1rem', color: 'white', fontWeight: 700 }}>
-          New Article
+          {isEdit ? 'Edit Article' : 'New Article'}
         </div>
         <button
-          onClick={handlePublish}
+          onClick={handleAction}
           disabled={publishing || !title.trim() || !body.trim()}
           style={{
             background: publishing ? '#333' : '#e85d04',
@@ -82,7 +120,7 @@ export default function AddArticle({ showToast }) {
             transition: 'all 0.2s',
           }}
         >
-          {publishing ? 'Publishing...' : 'Publish'}
+          {publishing ? (isEdit ? 'Saving...' : 'Publishing...') : (isEdit ? 'Save Changes' : 'Publish')}
         </button>
       </div>
 

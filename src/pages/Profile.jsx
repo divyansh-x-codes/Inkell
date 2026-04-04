@@ -30,48 +30,58 @@ export default function Profile({ showToast }) {
   const [followed, setFollowed] = useState(false);
   const [showSubModal, setShowSubModal] = useState(false);
 
-  // Dynamic profile data
   const [profile, setProfile] = useState(null);
   const [posts, setPosts] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [activity, setActivity] = useState([]);
+  const [likedPosts, setLikedPosts] = useState([]);
 
   const authorId = location.state?.authorId;
   const decodedName = decodeURIComponent(username || '').replace('@', '');
 
+  // 1. Profile Sync (Header Stats)
   useEffect(() => {
-    const loadProfile = async () => {
-      setLoading(true);
-      let targetProfile = null;
-
-      // 1. Try fetching by authorId from state
-      if (authorId) {
-        targetProfile = await getUserProfile(authorId);
-      } 
-      
-      // 2. If viewing OWN profile via /profile/username
-      if (!targetProfile && user && (user.name === decodedName || user.uid === authorId)) {
-        targetProfile = user;
-      }
-
-      if (targetProfile) {
-        setProfile(targetProfile);
-        const userPosts = await getArticlesByAuthor(targetProfile.uid || targetProfile.id);
-        setPosts(userPosts);
-      } else {
-        // Fallback for demo creators or not found
-        setProfile({
-          name: decodedName || 'Creator',
-          handle: `@${decodedName.toLowerCase().replace(/\s/g, '')}`,
-          bio: 'Inking stories into the digital well.',
-          avatar: null,
-          color: '#e85d04'
-        });
-      }
+    const uid = authorId || (user?.uid && (user.name === decodedName || user.uid === authorId) ? user.uid : null);
+    if (!uid) {
+      setProfile({
+        name: decodedName || 'Creator',
+        handle: `@${decodedName.toLowerCase().replace(/\s/g, '')}`,
+        bio: 'Sharing stories on Inkwell.',
+        avatar: null, color: '#e85d04'
+      });
       setLoading(false);
-    };
-
-    loadProfile();
+      return;
+    }
+    
+    setLoading(true);
+    const unsub = subscribeToUserProfile(uid, (p) => {
+      setProfile(p);
+      setLoading(false);
+    });
+    return () => unsub();
   }, [authorId, decodedName, user]);
+
+  // 2. Tab Sync (Individual Listeners)
+  useEffect(() => {
+    if (!profile?.uid && !profile?.id) return;
+    const uid = profile.uid || profile.id;
+
+    let unsubPosts, unsubActivity, unsubLikes;
+
+    if (activeTab === 'Posts') {
+      unsubPosts = subscribeToUserArticles(uid, setPosts);
+    } else if (activeTab === 'Activity') {
+      unsubActivity = subscribeToUserActivity(uid, setActivity);
+    } else if (activeTab === 'Likes') {
+      unsubLikes = subscribeToUserLikes(uid, setLikedPosts);
+    }
+
+    return () => {
+      if (unsubPosts) unsubPosts();
+      if (unsubActivity) unsubActivity();
+      if (unsubLikes) unsubLikes();
+    };
+  }, [profile, activeTab]);
 
   const handleSubscribe = () => {
     if (subscribed) {
@@ -109,12 +119,12 @@ export default function Profile({ showToast }) {
       return;
     }
     const convoId = getConversationId(user.uid, targetUid);
-    navigate(`/chat/${convoId}`, { 
-      state: { 
+    navigate(`/chat/${convoId}`, {
+      state: {
         recipientUserId: targetUid,
         recipientName: profile.name,
         recipientAvatar: profile.avatar
-      } 
+      }
     });
   };
 
@@ -149,7 +159,7 @@ export default function Profile({ showToast }) {
 
       <div className="profile-scroll-area">
         {loading ? (
-          <div style={{textAlign:'center', padding:'100px 20px', color:'#666'}}>Loading profile...</div>
+          <div style={{ textAlign: 'center', padding: '100px 20px', color: '#666' }}>Loading profile...</div>
         ) : profile && (
           <>
             <div className="profile-header-main">
@@ -163,7 +173,7 @@ export default function Profile({ showToast }) {
                       </span>
                     )}
                   </h1>
-                  <p className="profile-handle">{profile.handle || `@${profile.name?.toLowerCase().replace(/\s/g,'')}`}</p>
+                  <p className="profile-handle">{profile.handle || `@${profile.name?.toLowerCase().replace(/\s/g, '')}`}</p>
                 </div>
                 {profile.avatar
                   ? <img src={profile.avatar} alt={profile.name} className="profile-avatar-large" />
@@ -181,10 +191,21 @@ export default function Profile({ showToast }) {
               </div>
 
               <p className="profile-bio">{profile.bio || 'Sharing stories on Inkwell.'}</p>
+              
+              <div style={{ display: 'flex', gap: '20px', marginTop: '12px', marginBottom: '4px' }}>
+                <div style={{ fontSize: '0.92rem', color: 'var(--white)' }}>
+                  <span style={{ fontWeight: 700 }}>{profile.followersCount || 0}</span> 
+                  <span style={{ color: 'var(--gray)', marginLeft: '6px' }}>Subscribers</span>
+                </div>
+                <div style={{ fontSize: '0.92rem', color: 'var(--white)' }}>
+                  <span style={{ fontWeight: 700 }}>{profile.followingCount || 0}</span> 
+                  <span style={{ color: 'var(--gray)', marginLeft: '6px' }}>Following</span>
+                </div>
+              </div>
 
               <div className="profile-action-buttons">
                 {isOwnProfile ? (
-                   <button className="btn-subscribe-main" onClick={() => showToast('Profile editor coming soon')}>Edit Profile</button>
+                  <button className="btn-subscribe-main" onClick={() => showToast('Profile editor coming soon')}>Edit Profile</button>
                 ) : (
                   <>
                     <button
@@ -228,14 +249,56 @@ export default function Profile({ showToast }) {
               {activeTab === 'Posts' && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
                   {posts.length === 0 ? (
-                    <div style={{textAlign:'center', padding:'40px', color:'#555'}}>No posts yet.</div>
+                    <div style={{ textAlign: 'center', padding: '60px 20px', color: '#555' }}>
+                      <p style={{ opacity: 0.6 }}>No stories yet.</p>
+                    </div>
                   ) : (
-                    posts.map(a => <ArticleCard key={a.id} article={a} showToast={showToast} />)
+                    posts.map(a => (
+                      <ArticleCard 
+                        key={a.id} 
+                        article={a} 
+                        showToast={showToast} 
+                        isDashboard={isOwnProfile} 
+                      />
+                    ))
                   )}
                 </div>
               )}
-              {activeTab !== 'Posts' && (
-                <div style={{textAlign:'center', padding:'40px', color:'#555'}}>{activeTab} records will appear here.</div>
+
+              {activeTab === 'Activity' && (
+                <div className="activity-feed">
+                  {activity.length === 0 ? (
+                    <div style={{ textAlign: 'center', padding: '60px 20px', color: '#555' }}>
+                      <p style={{ opacity: 0.6 }}>No recent activity.</p>
+                    </div>
+                  ) : (
+                    activity.map(item => (
+                      <div key={item.id} className="activity-item" style={{ borderBottom: '1px solid #222', padding: '16px 0' }}>
+                        <p style={{ color: 'var(--orange)', fontSize: '0.8rem', fontWeight: 600, textTransform: 'uppercase', marginBottom: 4 }}>Commented</p>
+                        <p style={{ color: 'white', fontSize: '0.95rem', marginBottom: 8 }}>"{item.content}"</p>
+                        <p style={{ color: 'var(--gray)', fontSize: '0.8rem' }}>On article: {item.blogId.slice(0, 8)}...</p>
+                      </div>
+                    ))
+                  )}
+                </div>
+              )}
+
+              {activeTab === 'Likes' && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                  {likedPosts.length === 0 ? (
+                    <div style={{ textAlign: 'center', padding: '60px 20px', color: '#555' }}>
+                      <p style={{ opacity: 0.6 }}>No liked posts yet.</p>
+                    </div>
+                  ) : (
+                    likedPosts.map(a => (
+                      <ArticleCard 
+                        key={a.id} 
+                        article={a} 
+                        showToast={showToast} 
+                      />
+                    ))
+                  )}
+                </div>
               )}
             </div>
           </>

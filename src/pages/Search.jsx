@@ -22,17 +22,24 @@ export default function Search({ showToast }) {
   const [articles, setArticles] = useState([]);
   const [loading, setLoading] = useState(true);
 
+  // 1. Fetch with Error Resilience
   useEffect(() => {
     fetchArticles().then(data => {
-      setArticles(data);
+      // Filter out 'broken' documents that may have no title at all
+      const validData = (data || []).filter(item => item && item.title);
+      setArticles(validData);
+      setLoading(false);
+    }).catch(err => {
+      console.error("Search fetch failed", err);
       setLoading(false);
     });
   }, []);
 
+  // 2. Authors Memo with Safe Name Check
   const AUTHORS = useMemo(() => {
     const map = new Map();
     articles.forEach(a => {
-      const name = a.author_name || a.name;
+      const name = a.authorName || a.author_name || a.name || 'Anonymous';
       if (!map.has(name)) {
         map.set(name, { name, count: 1 });
       } else {
@@ -44,22 +51,31 @@ export default function Search({ showToast }) {
 
   const q = query.toLowerCase().trim();
 
+  // 3. Matched Articles with Defensive Access
   const matchedArticles = useMemo(() => {
     return articles.filter(a => {
+      const title = (a.title || '').toLowerCase();
+      const tagline = (a.tagline || '').toLowerCase();
+      const author = (a.authorName || a.author_name || a.name || '').toLowerCase();
+      const category = (a.category || '').toLowerCase();
+
       const catMatch = activeCategory === 'All' ||
-        (a.category || '').toLowerCase() === activeCategory.toLowerCase();
+        category === activeCategory.toLowerCase();
+      
       const textMatch = !q ||
-        a.title.toLowerCase().includes(q) ||
-        (a.tagline || '').toLowerCase().includes(q) ||
-        (a.author_name || a.name || '').toLowerCase().includes(q) ||
-        (a.category || '').toLowerCase().includes(q);
+        title.includes(q) ||
+        tagline.includes(q) ||
+        author.includes(q) ||
+        category.includes(q);
+
       return catMatch && textMatch;
     });
   }, [q, activeCategory, articles]);
 
+  // 4. Matched Authors with Safe Filter
   const matchedAuthors = useMemo(() => {
     if (!q) return [];
-    return AUTHORS.filter(a => a.name.toLowerCase().includes(q));
+    return AUTHORS.filter(a => (a.name || '').toLowerCase().includes(q));
   }, [q, AUTHORS]);
 
   const isSearching = q.length > 0;
@@ -68,9 +84,10 @@ export default function Search({ showToast }) {
     <div className="view active search-page">
       <div className="app-shell" style={{ position: 'relative', background: '#0d0d0d' }}>
 
+        {/* Search Header */}
         <div className="search-header">
           <div className={`search-bar-wrap ${focused ? 'focused' : ''}`}>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ width: 20, height: 20, color: 'var(--gray2)', marginRight: '8px' }}>
               <circle cx="11" cy="11" r="8"></circle>
               <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
             </svg>
@@ -86,8 +103,9 @@ export default function Search({ showToast }) {
             />
             {query && (
               <button
-                style={{ background: 'none', border: 'none', color: '#666', cursor: 'pointer', padding: '4px', display: 'flex' }}
+                className="clear-search-btn"
                 onClick={() => { setQuery(''); inputRef.current?.focus(); }}
+                style={{ marginLeft: '8px' }}
               >
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ width: 18, height: 18 }}>
                   <line x1="18" y1="6" x2="6" y2="18"></line>
@@ -98,124 +116,127 @@ export default function Search({ showToast }) {
           </div>
         </div>
 
-        <div className="search-category-tabs">
-          {CATEGORIES.map(cat => (
-            <button
-              key={cat}
-              className={`search-cat-pill ${activeCategory === cat ? 'active' : ''}`}
-              onClick={() => setActiveCategory(cat)}
-            >
-              {cat}
-            </button>
-          ))}
-        </div>
+        {/* Category Tabs */}
+        {!loading && (
+          <div className="search-category-tabs">
+            {CATEGORIES.map(cat => (
+              <button
+                key={cat}
+                className={`search-cat-pill ${activeCategory === cat ? 'active' : ''}`}
+                onClick={() => setActiveCategory(cat)}
+              >
+                {cat}
+              </button>
+            ))}
+          </div>
+        )}
 
         <div style={{ flex: 1, overflowY: 'auto', scrollbarWidth: 'none' }}>
           <div style={{ paddingBottom: 90 }}>
-            {matchedAuthors.length > 0 && (
-              <div style={{ padding: '4px 0 8px' }}>
-                <div style={{ padding: '8px 20px 6px', fontSize: '0.7rem', fontWeight: 700, color: '#555', textTransform: 'uppercase', letterSpacing: '0.1em' }}>
-                  Authors
-                </div>
-                {matchedAuthors.map(a => (
-                  <div
-                    key={a.name}
-                    style={{
-                      display: 'flex', alignItems: 'center', gap: 14,
-                      padding: '12px 20px', cursor: 'pointer'
-                    }}
-                    onClick={() => navigate(`/profile/${encodeURIComponent(a.name)}`)}
-                  >
-                    <div style={{
-                      width: 44, height: 44, borderRadius: '50%', flexShrink: 0,
-                      background: colorFor(a.name), display: 'flex', alignItems: 'center',
-                      justifyContent: 'center', fontWeight: 700, fontSize: '0.9rem', color: 'white'
-                    }}>
-                      {getInitials(a.name)}
-                    </div>
-                    <div>
-                      <div style={{ color: 'var(--white)', fontWeight: 600, fontSize: '0.95rem' }}>{a.name}</div>
-                      <div style={{ color: '#555', fontSize: '0.8rem' }}>{a.count} article{a.count !== 1 ? 's' : ''}</div>
-                    </div>
-                    <svg viewBox="0 0 24 24" fill="none" stroke="#444" strokeWidth="2" style={{ width: 16, height: 16, marginLeft: 'auto' }}>
-                      <polyline points="9 18 15 12 9 6"></polyline>
-                    </svg>
-                  </div>
-                ))}
-                <div style={{ height: 1, background: '#1a1a1a', margin: '4px 0' }}></div>
+            
+            {loading ? (
+              <div style={{ padding: '60px 24px', textAlign: 'center', color: '#333' }}>
+                <div className="search-loading-spinner" style={{ marginBottom: 12 }}>⏳</div>
+                <div style={{ fontSize: '0.9rem' }}>Searching the collective...</div>
               </div>
-            )}
-
-            {matchedArticles.length === 0 && matchedAuthors.length === 0 && (
-              <div style={{ textAlign: 'center', padding: '60px 24px', color: '#555' }}>
-                <div style={{ fontSize: '2rem', marginBottom: 12 }}>🔍</div>
-                <div style={{ color: 'var(--white)', fontWeight: 600, marginBottom: 8 }}>No results found</div>
-                <div style={{ fontSize: '0.9rem' }}>Try a different keyword or category</div>
-              </div>
-            )}
-
-            {isSearching && matchedArticles.length > 0 && (
-              <div style={{ padding: '8px 20px 4px', fontSize: '0.7rem', fontWeight: 700, color: '#555', textTransform: 'uppercase', letterSpacing: '0.1em' }}>
-                Articles ({matchedArticles.length})
-              </div>
-            )}
-
-            {!isSearching && matchedArticles[0] && (
-              <div
-                className="search-hero-card"
-                onClick={() => navigate(`/article/${matchedArticles[0].id}`)}
-              >
-                <img src={matchedArticles[0].cover_image || matchedArticles[0].coverImage} className="hero-bg" alt="Cover" />
-                <div className="hero-overlay"></div>
-                <div className="hero-content">
-                  <div style={{ fontSize: '0.7rem', fontWeight: 700, color: '#e85d04', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 }}>
-                    {matchedArticles[0].category}
-                  </div>
-                  <h2 className="hero-title">{matchedArticles[0].title}</h2>
-                  <div style={{ fontSize: '0.8rem', color: 'rgba(255,255,255,0.6)', marginTop: 6 }}>
-                    {matchedArticles[0].author_name || matchedArticles[0].name} · {matchedArticles[0].readTime || '4 min read'}
-                  </div>
-                </div>
-              </div>
-            )}
-
-            <div className="search-feed-list">
-              {(isSearching ? matchedArticles : matchedArticles.slice(1)).map(article => (
-                <div
-                  className="search-list-item"
-                  key={article.id}
-                  onClick={() => navigate(`/article/${article.id}`)}
-                >
-                  <div className="list-text-col">
-                    <div style={{ fontSize: '0.7rem', fontWeight: 700, color: '#e85d04', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>
-                      {article.category}
-                    </div>
-                    <h3 className="list-title">{article.title}</h3>
-                    {article.tagline && (
-                      <p style={{ fontSize: '0.8rem', color: '#666', marginTop: 4, lineHeight: 1.4, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
-                        {article.tagline}
-                      </p>
-                    )}
-                    <div style={{ fontSize: '0.75rem', color: '#555', marginTop: 6, display: 'flex', alignItems: 'center', gap: 4 }}>
-                      <span
-                        style={{ cursor: 'pointer', color: '#888' }}
-                        onClick={e => { e.stopPropagation(); navigate(`/profile/${encodeURIComponent(article.author_name || article.name)}`); }}
+            ) : (
+              <>
+                {/* Matched Authors Section */}
+                {matchedAuthors.length > 0 && (
+                  <div style={{ padding: '4px 0 8px' }}>
+                    <div className="search-section-label">Authors</div>
+                    {matchedAuthors.map(a => (
+                      <div
+                        key={a.name}
+                        className="author-search-item"
+                        onClick={() => navigate(`/profile/${encodeURIComponent(a.name)}`)}
                       >
-                        {article.author_name || article.name}
-                      </span>
-                      <span>·</span>
-                      <span>{article.readTime || '5 min read'}</span>
+                        <div className="search-author-avatar" style={{ background: colorFor(a.name) }}>
+                          {getInitials(a.name)}
+                        </div>
+                        <div className="search-author-info">
+                          <div className="search-author-name">{a.name}</div>
+                          <div className="search-author-meta">{a.count} article{a.count !== 1 ? 's' : ''}</div>
+                        </div>
+                        <svg viewBox="0 0 24 24" fill="none" stroke="#333" strokeWidth="2" style={{ width: 14, height: 14, marginLeft: 'auto' }}>
+                          <polyline points="9 18 15 12 9 6"></polyline>
+                        </svg>
+                      </div>
+                    ))}
+                    <div className="search-divider"></div>
+                  </div>
+                )}
+
+                {/* Empty State */}
+                {matchedArticles.length === 0 && matchedAuthors.length === 0 && (
+                  <div style={{ textAlign: 'center', padding: '100px 40px', color: '#555' }}>
+                    <div style={{ fontSize: '2.5rem', marginBottom: 16 }}>🔍</div>
+                    <div style={{ color: 'var(--white)', fontWeight: 700, fontSize: '1.2rem', marginBottom: 8 }}>No results found</div>
+                    <div style={{ fontSize: '0.9rem', color: '#666', maxWidth: 220, margin: '0 auto' }}>
+                      We couldn't find matches for <span style={{ color: 'var(--orange)' }}>"{query}"</span>
                     </div>
                   </div>
-                  <div className="list-img-col">
-                    {(article.cover_image || article.coverImage)
-                      ? <img src={article.cover_image || article.coverImage} alt="thumbnail" />
-                      : <div className="fallback-img">{article.title[0]}</div>
-                    }
+                )}
+
+                {/* Section Title */}
+                {isSearching && matchedArticles.length > 0 && (
+                  <div className="search-section-label">Articles ({matchedArticles.length})</div>
+                )}
+
+                {/* Hero Card (when not searching) */}
+                {!isSearching && matchedArticles[0] && (
+                  <div
+                    className="search-hero-card"
+                    onClick={() => navigate(`/article/${matchedArticles[0].id}`)}
+                  >
+                    <img src={matchedArticles[0].coverImage || matchedArticles[0].cover_image} className="hero-bg" alt="Cover" />
+                    <div className="hero-overlay"></div>
+                    <div className="hero-content">
+                      <div className="hero-category-tag">{matchedArticles[0].category}</div>
+                      <h2 className="hero-title">{matchedArticles[0].title}</h2>
+                      <div className="hero-meta">
+                        {matchedArticles[0].authorName || matchedArticles[0].author_name || matchedArticles[0].name} · {matchedArticles[0].readTime || '4 min read'}
+                      </div>
+                    </div>
                   </div>
+                )}
+
+                {/* Article List */}
+                <div className="search-feed-list">
+                  {(isSearching ? matchedArticles : matchedArticles.slice(1)).map(article => (
+                    <div
+                      className="search-list-item"
+                      key={article.id}
+                      onClick={() => navigate(`/article/${article.id}`)}
+                    >
+                      <div className="list-text-col">
+                        <div className="list-category-tag">{article.category}</div>
+                        <h3 className="list-title">{article.title}</h3>
+                        {article.tagline && (
+                          <p className="list-excerpt">{article.tagline}</p>
+                        )}
+                        <div className="list-meta-row">
+                          <span
+                            className="list-author-link"
+                            onClick={e => { e.stopPropagation(); navigate(`/profile/${encodeURIComponent(article.authorName || article.author_name || article.name)}`); }}
+                          >
+                            {article.authorName || article.author_name || article.name}
+                          </span>
+                          <span className="dot">·</span>
+                          <span className="list-time">{article.readTime || '5 min read'}</span>
+                        </div>
+                      </div>
+                      <div className="list-img-col">
+                        {(article.coverImage || article.cover_image)
+                          ? <img src={article.coverImage || article.cover_image} alt="thumbnail" />
+                          : <div className="fallback-img">{article.title[0]}</div>
+                        }
+                      </div>
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
+              </>
+            )}
           </div>
         </div>
 

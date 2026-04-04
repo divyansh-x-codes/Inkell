@@ -16,6 +16,7 @@ import {
   arrayRemove,
   increment,
   updateDoc,
+  collectionGroup,
 } from "firebase/firestore";
 import { articles as mockArticles } from "../data";
 
@@ -39,8 +40,8 @@ export const subscribeToBlogs = (setBlogs) => {
       setBlogs(blogs);
     }
   }, (err) => {
-    console.warn("Real-time feed failed, using mock data:", err.message);
-    setBlogs(mockArticles);
+    console.warn("Real-time feed failed:", err.message);
+    setBlogs([]);
   });
   return unsubscribe;
 };
@@ -92,21 +93,59 @@ export const createBlog = async (blog, user) => {
   }
 };
 
+export const updateBlog = async (blogId, updatedData) => {
+  try {
+    const blogRef = doc(db, BLOGS_COL, blogId);
+    await updateDoc(blogRef, {
+      ...updatedData,
+      updatedAt: serverTimestamp(),
+    });
+    console.log("Blog updated ✅", blogId);
+    return { error: null };
+  } catch (error) {
+    console.error("Update failed:", error);
+    return { error };
+  }
+};
+
+export const getBlog = async (blogId) => {
+  try {
+    const snap = await getDoc(doc(db, BLOGS_COL, blogId));
+    if (snap.exists()) return { id: snap.id, ...snap.data() };
+    return null;
+  } catch (error) {
+    console.error("Fetch blog failed:", error);
+    return null;
+  }
+};
+
 // ─── Follow System ────────────────────────────────────────────────────────────
 export const followAuthor = async (currentUserId, authorId) => {
   try {
+    // 1. Update following list
     await setDoc(doc(db, FOLLOWS_COL, currentUserId), {
       following: arrayUnion(authorId),
     }, { merge: true });
+
+    // 2. Increment counts on both users
+    await updateDoc(doc(db, USERS_COL, currentUserId), { followingCount: increment(1) });
+    await updateDoc(doc(db, USERS_COL, authorId), { followersCount: increment(1) });
+
     return { error: null };
   } catch (error) { return { error }; }
 };
 
 export const unfollowAuthor = async (currentUserId, authorId) => {
   try {
+    // 1. Update following list
     await setDoc(doc(db, FOLLOWS_COL, currentUserId), {
       following: arrayRemove(authorId),
     }, { merge: true });
+
+    // 2. Decrement counts on both users
+    await updateDoc(doc(db, USERS_COL, currentUserId), { followingCount: increment(-1) });
+    await updateDoc(doc(db, USERS_COL, authorId), { followersCount: increment(-1) });
+
     return { error: null };
   } catch (error) { return { error }; }
 };
@@ -135,32 +174,93 @@ export const subscribeToFollowedBlogs = (userId, setBlogs) => {
   });
 };
 
-// ─── LIKES (Persistent & Global) ──────────────────────────────────────────────
+// ─── LIKES (Real-time Subcollection Pattern) ─────────────────────────────────
 export const toggleLike = async (blogId, userId) => {
-  if (!userId) return { error: "Login required" };
-  const likeId = `${userId}_${blogId}`;
-  const likeRef = doc(db, LIKES_COL, likeId);
-  const blogRef = doc(db, BLOGS_COL, blogId);
-
+  if (!userId) return;
+  const likeRef = doc(db, BLOGS_COL, blogId, "likes", userId);
   try {
     const snap = await getDoc(likeRef);
     if (snap.exists()) {
-      await deleteDoc(likeRef);
-      await updateDoc(blogRef, { likesCount: increment(-1) });
-      return { liked: false };
+      await deleteDoc(likeRef); // unlike
+      return false;
     } else {
-      await setDoc(likeRef, { userId, blogId, createdAt: serverTimestamp() });
-      await updateDoc(blogRef, { likesCount: increment(1) });
-      return { liked: true };
+      await setDoc(likeRef, {
+        userId,
+        createdAt: Date.now()
+      });
+      return true;
     }
-  } catch (error) { return { error }; }
+  } catch (error) {
+    console.error("Toggle like failed:", error);
+    return null;
+  }
 };
 
 export const isBlogLiked = async (blogId, userId) => {
   if (!userId) return false;
-  const likeId = `${userId}_${blogId}`;
-  const snap = await getDoc(doc(db, LIKES_COL, likeId));
+  const likeRef = doc(db, BLOGS_COL, blogId, "likes", userId);
+  const snap = await getDoc(likeRef);
   return snap.exists();
+};
+
+export const subscribeToLikesCount = (blogId, setCount) => {
+  const ref = collection(db, BLOGS_COL, blogId, "likes");
+  return onSnapshot(ref, (snap) => {
+    setCount(snap.size);
+  });
+};
+
+export const subscribeToUserLike = (blogId, userId, setLiked) => {
+  if (!userId) return;
+  const ref = doc(db, BLOGS_COL, blogId, "likes", userId);
+  return onSnapshot(ref, (snap) => {
+    setLiked(snap.exists());
+  });
+};
+
+export const subscribeToUserProfile = (uid, setProfile) => {
+  if (!uid) return;
+  return onSnapshot(doc(db, USERS_COL, uid), (snap) => {
+    if (snap.exists()) setProfile({ uid: snap.id, ...snap.data() });
+  });
+};
+
+export const subscribeToUserArticles = (userId, setArticles) => {
+  const q = query(collection(db, BLOGS_COL), where("authorId", "==", userId), orderBy("createdAt", "desc"));
+  return onSnapshot(q, (snapshot) => {
+    setArticles(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
+  });
+};
+
+export const subscribeToUserActivity = (userId, setActivity) => {
+  const q = query(
+    collection(db, COMMENTS_COL),
+    where("userId", "==", userId),
+    orderBy("createdAt", "desc")
+  );
+  return onSnapshot(q, (snapshot) => {
+    setActivity(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
+  });
+};
+
+export const subscribeToUserLikes = (userId, setLikedArticles) => {
+  // 💎 Collection Group Query: Finds all 'likes' docs across all articles where userId matches
+  const q = query(collectionGroup(db, "likes"), where("userId", "==", userId));
+  
+  return onSnapshot(q, async (snapshot) => {
+    const blogIds = snapshot.docs.map(doc => doc.ref.parent.parent.id);
+    if (!blogIds.length) {
+      setLikedArticles([]);
+      return;
+    }
+    
+    // Fetch the actual article contents for those IDs
+    // Firestore 'in' query is limited to 10-30 IDs usually, but perfect for dashboard recent likes
+    const blogsQuery = query(collection(db, BLOGS_COL), where("__name__", "in", blogIds.slice(0, 30)));
+    onSnapshot(blogsQuery, (snap) => {
+      setLikedArticles(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    });
+  });
 };
 
 // ─── COMMENTS (Real-time & Global) ───────────────────────────────────────────
@@ -175,9 +275,31 @@ export const addComment = async (blogId, content, user) => {
       content,
       createdAt: serverTimestamp(),
     });
-    await updateDoc(doc(db, BLOGS_COL, blogId), { commentsCount: increment(1) });
     return { error: null };
-  } catch (error) { return { error }; }
+  } catch (error) {
+    console.error("Comment post failed:", error);
+    return { error };
+  }
+};
+
+export const deleteComment = async (commentId, blogId) => {
+  try {
+    await deleteDoc(doc(db, COMMENTS_COL, commentId));
+    return { error: null };
+  } catch (error) {
+    console.error("Delete comment failed:", error);
+    return { error };
+  }
+};
+
+export const deleteBlog = async (blogId) => {
+  try {
+    await deleteDoc(doc(db, BLOGS_COL, blogId));
+    return { error: null };
+  } catch (error) {
+    console.error("Delete blog failed:", error);
+    return { error };
+  }
 };
 
 export const subscribeToComments = (blogId, setComments) => {

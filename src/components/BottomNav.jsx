@@ -36,7 +36,7 @@ export default function BottomNav({ showToast }) {
       {/* Subscriptions */}
       <div className="nav-item" onClick={() => handleNav('#', 'Subscriptions coming soon!')}>
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M21 8v13H3V8M1 3h22v5H1zM10 12h4"/>
+          <path d="M21 8v13H3V8M1 3h22v5H1zM10 12h4" />
         </svg>
       </div>
 

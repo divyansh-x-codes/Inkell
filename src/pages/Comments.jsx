@@ -25,18 +25,33 @@ export default function Comments({ showToast }) {
   useEffect(() => {
     fetchArticles().then(articles => {
       const art = articles.find(a => String(a.id) === String(id));
-      setArticle(art);
+      if (art) {
+        setArticle(art);
+      } else {
+        // Final fallback if fetchArticles didn't have it (unlikely)
+        setArticle(null);
+      }
+    }).catch(err => {
+      console.error("Failed to load article context for comments:", err);
     });
   }, [id]);
 
   // Real-time comments subscription
   useEffect(() => {
     if (!id) return;
+    setLoading(true);
     const unsubscribe = subscribeToComments(id, (data) => {
-      setComments(data);
-      setLoading(false);
+      setComments(data || []);
+      setLoading(false); // Clear loading on first data (even if empty)
     });
-    return () => unsubscribe();
+    
+    // Safety timeout: if no data for 3 seconds, stop loading
+    const timer = setTimeout(() => setLoading(false), 3000);
+
+    return () => {
+      unsubscribe();
+      clearTimeout(timer);
+    };
   }, [id]);
 
   const handleSubmit = async (e) => {
@@ -48,12 +63,42 @@ export default function Comments({ showToast }) {
       return;
     }
 
-    const result = await addComment(id, newComment.trim(), user);
-    if (!result.error) {
-      setNewComment('');
-      showToast('Comment posted!');
-    } else {
+    const content = newComment.trim();
+    setNewComment(''); // Instant clear
+
+    // --- OPTIMISTIC UPDATE ---
+    const tempId = 'temp-' + Date.now();
+    const optimisticComment = {
+      id: tempId,
+      content: content,
+      userId: user.uid,
+      userName: user.displayName || user.name || 'You',
+      userAvatar: user.photoURL || user.avatar || null,
+      createdAt: { toDate: () => new Date() }, // Fake Firestore Date object
+      isOptimistic: true
+    };
+
+    // Prepend to list immediately
+    setComments(prev => [optimisticComment, ...prev]);
+
+    const result = await addComment(id, content, user);
+    
+    if (result.error) {
       showToast('Failed to post comment');
+      // Rollback: remove the optimistic comment and restore text
+      setComments(prev => prev.filter(c => c.id !== tempId));
+      setNewComment(content); 
+    } else {
+      showToast('Comment posted!');
+    }
+  };
+
+  const handleDelete = async (commentId) => {
+    const result = await deleteComment(commentId, id);
+    if (result.error) {
+      showToast('Failed to delete comment');
+    } else {
+      showToast('Comment deleted');
     }
   };
 
@@ -129,10 +174,18 @@ export default function Comments({ showToast }) {
                       {c.userName}
                     </div>
                     <div className="thread-meta">
-                      <span style={{ color: 'var(--gray)', fontSize: '0.8rem', marginLeft: '8px' }}>
+                      <span style={{ color: 'var(--gray)', fontSize: '0.8rem', marginLeft: '12px' }}>
                         {c.createdAt?.toDate ? new Date(c.createdAt.toDate()).toLocaleDateString() : 'Just now'}
                       </span>
                     </div>
+                    {user && c.userId === user.uid && (
+                      <button className="del-btn" onClick={() => handleDelete(c.id)} style={{marginLeft: 'auto', background: 'none', border: 'none', color: '#666', cursor: 'pointer', padding: '4px'}}>
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" style={{width: 17, height: 17}}>
+                          <polyline points="3 6 5 6 21 6"></polyline>
+                          <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                        </svg>
+                      </button>
+                    )}
                   </div>
                   <div className="thread-text">{c.content}</div>
                 </div>

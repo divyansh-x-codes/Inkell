@@ -93,8 +93,8 @@ export default function ChatThread({ showToast }) {
             ? <img src={recipient.avatar} alt={displayName} className="chat-header-avatar-img" />
             : <div className="chat-header-avatar-letter" style={{ background: colorForName(displayName) }}>{getInitials(displayName)}</div>
           }
-          <div>
-            <div className="chat-header-name">{displayName}</div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div className="chat-header-name" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{displayName}</div>
             <div className="chat-header-sub">Online now</div>
           </div>
         </div>
