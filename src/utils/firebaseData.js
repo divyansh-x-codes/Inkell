@@ -408,6 +408,9 @@ export const subscribeToMessages = (convoId, setMessages) => {
   );
   return onSnapshot(q, (snapshot) => {
     setMessages(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
+  }, (err) => {
+    console.error("Messages sync failed:", err.message);
+    setMessages([]);
   });
 };
 
@@ -419,6 +422,9 @@ export const subscribeToConversations = (userId, setConvos) => {
   );
   return onSnapshot(q, (snapshot) => {
     setConvos(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
+  }, (err) => {
+    console.error("Conversations sync failed:", err.message);
+    setConvos([]);
   });
 };
 

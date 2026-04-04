@@ -18,15 +18,30 @@ import AddArticle from './pages/AddArticle';
 
 import { useAuth } from "./context/AuthContext";
 
+const LoadingScreen = () => (
+  <div style={{
+    height: '100vh',
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    background: 'var(--bg)',
+    color: 'var(--white)'
+  }}>
+    <div className="logo-mark" style={{ marginBottom: 20 }}></div>
+    <div style={{ fontSize: '0.9rem', opacity: 0.6 }}>Syncing your session...</div>
+  </div>
+);
+
 const ProtectedRoute = ({ children }) => {
   const { user, loading } = useAuth();
-  if (loading) return <div className="loading-screen">Loading...</div>;
+  if (loading) return <LoadingScreen />;
   return user ? children : <Navigate to="/" replace />;
 };
 
 const PublicRoute = ({ children }) => {
   const { user, loading } = useAuth();
-  if (loading) return <div className="loading-screen">Loading...</div>;
+  if (loading) return <LoadingScreen />;
   return !user ? children : <Navigate to="/home" replace />;
 };
 

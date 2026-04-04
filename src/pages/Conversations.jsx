@@ -37,7 +37,13 @@ export default function Conversations({ showToast }) {
       setConversations(data);
       setLoading(false);
     });
-    return () => unsubscribe();
+    // Add a small safety timeout to clear loading if Firestore hangs
+    const safety = setTimeout(() => setLoading(false), 3000);
+
+    return () => {
+      unsubscribe();
+      clearTimeout(safety);
+    };
   }, [user]);
 
   // 2. Handle user search for starting NEW chats

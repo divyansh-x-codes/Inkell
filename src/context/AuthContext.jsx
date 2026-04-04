@@ -3,6 +3,8 @@ import { auth, db } from '../firebase';
 import {
   GoogleAuthProvider,
   signInWithPopup,
+  signInWithRedirect,
+  getRedirectResult,
   onAuthStateChanged,
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
@@ -41,9 +43,12 @@ export const AuthProvider = ({ children }) => {
 
   // Listen to Firebase auth state
   useEffect(() => {
+    // 1. Check for redirect results (Google login on mobile)
+    getRedirectResult(auth).catch(err => console.error("Redirect error:", err));
+
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
-        // 1. Get base info
+        // ... fetching profile ...
         let profileData = {
           uid: firebaseUser.uid,
           name: firebaseUser.displayName || firebaseUser.email?.split('@')[0] || 'User',
@@ -51,7 +56,6 @@ export const AuthProvider = ({ children }) => {
           avatar: firebaseUser.photoURL,
         };
 
-        // 2. Fetch/Sync with Firestore
         try {
           const userRef = doc(db, 'users', firebaseUser.uid);
           const snap = await getDoc(userRef);
@@ -59,6 +63,7 @@ export const AuthProvider = ({ children }) => {
           if (snap.exists()) {
             profileData = { ...profileData, ...snap.data() };
           } else {
+            // First time login - sync info
             await syncUserToFirestore(firebaseUser);
           }
         } catch (err) {
@@ -98,10 +103,16 @@ export const AuthProvider = ({ children }) => {
   // Google Sign In
   const loginWithGoogle = async () => {
     const provider = new GoogleAuthProvider();
+    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+
     try {
-      const result = await signInWithPopup(auth, provider);
-      // syncUserToFirestore will be handled by the onAuthStateChanged listener
-      return { user: result.user, error: null };
+      if (isMobile) {
+        await signInWithRedirect(auth, provider);
+        return { user: null, error: null }; // result handled by getRedirectResult
+      } else {
+        const result = await signInWithPopup(auth, provider);
+        return { user: result.user, error: null };
+      }
     } catch (error) {
       return { user: null, error };
     }
