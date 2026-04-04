@@ -24,7 +24,8 @@ export default function Home({ showToast }) {
   // ── Real-time global feed ──────────────────────────────────
   useEffect(() => {
     const unsubscribe = subscribeToBlogs((blogs) => {
-      setArticles(blogs);
+      const sorted = [...blogs].sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+      setArticles(sorted);
       setLoading(false);
     });
     return () => unsubscribe();
@@ -33,7 +34,10 @@ export default function Home({ showToast }) {
   // ── Real-time following feed ───────────────────────────────
   useEffect(() => {
     if (!user?.uid) return;
-    subscribeToFollowedBlogs(user.uid, setFollowedArticles);
+    subscribeToFollowedBlogs(user.uid, (blogs) => {
+      const sorted = [...blogs].sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+      setFollowedArticles(sorted);
+    });
   }, [user]);
 
   // ── Unread badge ───────────────────────────────────────────

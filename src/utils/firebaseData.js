@@ -164,10 +164,9 @@ export const subscribeToFollowedBlogs = (userId, setBlogs) => {
       return;
     }
     const q = query(
-      collection(db, BLOGS_COL),
-      where("authorId", "in", following),
-      orderBy("createdAt", "desc")
-    );
+    collection(db, BLOGS_COL),
+    where("category", "==", category)
+  );
     onSnapshot(q, (snapshot) => {
       setBlogs(snapshot.docs.map((d) => ({ id: d.id, ...d.data() })));
     });
@@ -226,7 +225,10 @@ export const subscribeToUserProfile = (uid, setProfile) => {
 };
 
 export const subscribeToUserArticles = (userId, setArticles) => {
-  const q = query(collection(db, BLOGS_COL), where("authorId", "==", userId), orderBy("createdAt", "desc"));
+  const q = query(
+    collection(db, BLOGS_COL),
+    where("userId", "==", userId)
+  );
   return onSnapshot(q, (snapshot) => {
     setArticles(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
   });
@@ -235,8 +237,7 @@ export const subscribeToUserArticles = (userId, setArticles) => {
 export const subscribeToUserActivity = (userId, setActivity) => {
   const q = query(
     collection(db, COMMENTS_COL),
-    where("userId", "==", userId),
-    orderBy("createdAt", "desc")
+    where("userId", "==", userId)
   );
   return onSnapshot(q, (snapshot) => {
     setActivity(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
@@ -275,6 +276,10 @@ export const addComment = async (blogId, content, user) => {
       content,
       createdAt: serverTimestamp(),
     });
+    // Sync count on parent blog
+    await updateDoc(doc(db, BLOGS_COL, blogId), {
+      commentsCount: increment(1)
+    });
     return { error: null };
   } catch (error) {
     console.error("Comment post failed:", error);
@@ -285,6 +290,12 @@ export const addComment = async (blogId, content, user) => {
 export const deleteComment = async (commentId, blogId) => {
   try {
     await deleteDoc(doc(db, COMMENTS_COL, commentId));
+    // Sync count on parent blog
+    if (blogId) {
+      await updateDoc(doc(db, BLOGS_COL, blogId), {
+        commentsCount: increment(-1)
+      });
+    }
     return { error: null };
   } catch (error) {
     console.error("Delete comment failed:", error);
@@ -305,8 +316,7 @@ export const deleteBlog = async (blogId) => {
 export const subscribeToComments = (blogId, setComments) => {
   const q = query(
     collection(db, COMMENTS_COL),
-    where("blogId", "==", blogId),
-    orderBy("createdAt", "asc")
+    where("blogId", "==", blogId)
   );
   return onSnapshot(q, (snapshot) => {
     setComments(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));

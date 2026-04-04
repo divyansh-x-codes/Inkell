@@ -1,38 +1,29 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-
-const PROFILE_KEY = 'inkwell_my_profile';
-
-export function loadMyProfile() {
-  try {
-    const raw = localStorage.getItem(PROFILE_KEY);
-    return raw ? JSON.parse(raw) : null;
-  } catch { return null; }
-}
-
-export function saveMyProfile(data) {
-  try { localStorage.setItem(PROFILE_KEY, JSON.stringify(data)); } catch {}
-}
-
-const DEFAULT_PROFILE = {
-  name: 'You',
-  handle: '@inkwell_reader',
-  bio: 'Reading enthusiast. Tech, AI, and culture. Subscriber to great ideas.',
-  color: '#1a9e6e',
-  avatar: null,
-};
+import { useAuth } from '../context/AuthContext';
+import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { db } from '../firebase';
 
 export default function EditProfile({ showToast }) {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const fileRef = useRef(null);
 
-  const existing = loadMyProfile() || DEFAULT_PROFILE;
-  const [name, setName] = useState(existing.name);
-  const [handle, setHandle] = useState(existing.handle);
-  const [bio, setBio] = useState(existing.bio);
-  const [avatar, setAvatar] = useState(existing.avatar);
-  const [color] = useState(existing.color);
+  const [name, setName] = useState(user?.name || '');
+  const [handle, setHandle] = useState(user?.handle || '');
+  const [bio, setBio] = useState(user?.bio || '');
+  const [avatar, setAvatar] = useState(user?.avatar || '');
+  const [color] = useState(user?.color || '#e85d04');
   const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (user) {
+      setName(user.name || '');
+      setHandle(user.handle || '');
+      setBio(user.bio || '');
+      setAvatar(user.avatar || '');
+    }
+  }, [user]);
 
   const getInitials = (n) => {
     if (!n) return 'Y';
@@ -52,15 +43,29 @@ export default function EditProfile({ showToast }) {
     reader.readAsDataURL(file);
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!name.trim()) { showToast('Name cannot be empty'); return; }
+    if (!user?.uid) { showToast('Please login first'); return; }
+    
     setSaving(true);
-    setTimeout(() => {
-      saveMyProfile({ name: name.trim(), handle, bio, avatar, color });
+    try {
+      const userRef = doc(db, 'users', user.uid);
+      await setDoc(userRef, {
+        name: name.trim(),
+        handle: handle || `@${name.toLowerCase().replace(/\s/g, '')}`,
+        bio,
+        avatar,
+        updatedAt: serverTimestamp(),
+      }, { merge: true });
+      
       showToast('Profile saved!');
-      setSaving(false);
       navigate('/my-profile');
-    }, 600);
+    } catch (err) {
+      console.error("Save failed:", err);
+      showToast('Failed to save profile');
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (

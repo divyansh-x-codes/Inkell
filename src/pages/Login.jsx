@@ -4,19 +4,26 @@ import { useAuth } from '../context/AuthContext';
 
 export default function Login({ showToast }) {
   const navigate = useNavigate();
-  const { signIn } = useAuth();
-  const [name, setName] = useState('');
+  const { logIn } = useAuth();
   const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [loading, setLoading] = useState(false);
 
-  const doLogin = () => {
-    if (!email) {
-      showToast('Please enter your email');
+  const doLogin = async () => {
+    if (!email || !password) {
+      showToast('Please enter your email and password');
       return;
     }
-    const displayName = name || email.split('@')[0];
-    signIn(displayName, email);
-    showToast('Welcome back!');
-    navigate('/home');
+    setLoading(true);
+    const { error } = await logIn(email, password);
+    setLoading(false);
+
+    if (error) {
+      showToast(error.message || 'Login failed');
+    } else {
+      showToast('Welcome back!');
+      navigate('/home');
+    }
   };
 
   return (
@@ -28,15 +35,6 @@ export default function Login({ showToast }) {
       <p className="screen-sub">Log in to your Inkwell account</p>
 
       <div className="input-group">
-        <label>Name (optional)</label>
-        <input
-          type="text"
-          placeholder="Your name"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-        />
-      </div>
-      <div className="input-group">
         <label>Email</label>
         <input
           type="email"
@@ -45,8 +43,22 @@ export default function Login({ showToast }) {
           onChange={(e) => setEmail(e.target.value)}
         />
       </div>
-      <button className="btn-primary" style={{ marginTop: '8px' }} onClick={doLogin}>
-        Continue
+      <div className="input-group">
+        <label>Password</label>
+        <input
+          type="password"
+          placeholder="••••••••"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+        />
+      </div>
+      <button 
+        className="btn-primary" 
+        style={{ marginTop: '8px', opacity: loading ? 0.7 : 1 }} 
+        onClick={doLogin}
+        disabled={loading}
+      >
+        {loading ? 'Logging in...' : 'Continue'}
       </button>
 
       <p className="switch-auth">Don't have an account? <span onClick={() => navigate('/signup')}>Sign up</span></p>

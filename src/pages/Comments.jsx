@@ -41,8 +41,14 @@ export default function Comments({ showToast }) {
     if (!id) return;
     setLoading(true);
     const unsubscribe = subscribeToComments(id, (data) => {
-      setComments(data || []);
-      setLoading(false); // Clear loading on first data (even if empty)
+      // Sort locally to avoid needing a Firestore composite index
+      const sorted = [...(data || [])].sort((a, b) => {
+        const timeA = a.createdAt?.toMillis ? a.createdAt.toMillis() : (a.timestamp || 0);
+        const timeB = b.createdAt?.toMillis ? b.createdAt.toMillis() : (b.timestamp || 0);
+        return timeB - timeA; // Newest first
+      });
+      setComments(sorted);
+      setLoading(false);
     });
     
     // Safety timeout: if no data for 3 seconds, stop loading

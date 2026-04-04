@@ -5,7 +5,14 @@ import BottomNav from '../components/BottomNav';
 import { useAuth } from '../context/AuthContext';
 import { db } from '../firebase';
 import { doc, onSnapshot } from 'firebase/firestore';
-import { toggleLike, toggleSave, isBlogLiked, isBlogSaved } from '../utils/firebaseData';
+import { 
+  toggleLike, 
+  toggleSave, 
+  isBlogLiked, 
+  isBlogSaved,
+  subscribeToLikesCount,
+  subscribeToUserLike
+} from '../utils/firebaseData';
 
 function Poll({ poll, showToast }) {
   const [voted, setVoted] = useState(false);
@@ -45,7 +52,7 @@ export default function Reader({ showToast }) {
   const [saved, setSaved] = useState(false);
   const [likesCount, setLikesCount] = useState(0);
 
-  // 1. Real-time article data subscription (Likes/Comments/Content)
+  // 1. Real-time article data subscription (Comments/Content)
   useEffect(() => {
     if (!id) return;
     setLoading(true);
@@ -54,14 +61,13 @@ export default function Reader({ showToast }) {
       if (snap.exists()) {
         const data = { id: snap.id, ...snap.data() };
         setArticle(data);
-        setLikesCount(data.likesCount || 0);
+        // Comments count is synced from the doc real-time
         setLoading(false);
       } else {
         // Fallback to mock if not found in Firestore
         const art = mockArticles.find(a => String(a.id) === String(id));
         if (art) {
           setArticle(art);
-          setLikesCount(parseInt(art.likes) || 0);
         }
         setLoading(false);
       }
@@ -73,10 +79,23 @@ export default function Reader({ showToast }) {
     return () => unsubscribe();
   }, [id]);
 
-  // 2. Load user-specific interaction status (Likes/Saves) from Firestore
+  // 1b. Real-time Likes Count subscription
+  useEffect(() => {
+    if (!id) return;
+    const unsub = subscribeToLikesCount(id, setLikesCount);
+    return () => unsub();
+  }, [id]);
+
+  // 1c. Real-time User Like status subscription
+  useEffect(() => {
+    if (!user || !id) return;
+    const unsub = subscribeToUserLike(id, user.uid, setLiked);
+    return () => unsub && unsub();
+  }, [id, user]);
+
+  // 2. Load user-specific interaction status (Saves) from Firestore
   useEffect(() => {
     if (user?.uid && id) {
-      isBlogLiked(id, user.uid).then(setLiked);
       isBlogSaved(id, user.uid).then(setSaved);
     }
   }, [user, id]);

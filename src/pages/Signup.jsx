@@ -4,19 +4,28 @@ import { useAuth } from '../context/AuthContext';
 
 export default function Signup({ showToast }) {
   const navigate = useNavigate();
-  const { signIn, loginWithGoogle } = useAuth();
+  const { signUp, loginWithGoogle } = useAuth();
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [loadingGoogle, setLoadingGoogle] = useState(false);
+  const [loading, setLoading] = useState(false);
 
-  const doSignup = () => {
-    if (!name || !email) {
+  const doSignup = async () => {
+    if (!name || !email || !password) {
       showToast('Please fill in all fields');
       return;
     }
-    signIn(name, email);
-    showToast('Account created!');
-    navigate('/home');
+    setLoading(true);
+    const { error } = await signUp(name, email, password);
+    setLoading(false);
+    
+    if (error) {
+      showToast(error.message || 'Signup failed');
+    } else {
+      showToast('Account created!');
+      navigate('/home');
+    }
   };
 
   const handleGoogleSignup = async () => {
@@ -67,16 +76,21 @@ export default function Signup({ showToast }) {
         />
       </div>
       <div className="input-group">
-        <label>Email</label>
+        <label>Password</label>
         <input
-          type="email"
-          placeholder="you@example.com"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
+          type="password"
+          placeholder="••••••••"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
         />
       </div>
-      <button className="btn-primary" style={{ marginTop: '8px' }} onClick={doSignup}>
-        Create account
+      <button 
+        className="btn-primary" 
+        style={{ marginTop: '8px', opacity: loading ? 0.7 : 1 }} 
+        onClick={doSignup}
+        disabled={loading}
+      >
+        {loading ? 'Creating account...' : 'Create account'}
       </button>
 
       <p className="switch-auth">Already have an account? <span onClick={() => navigate('/login')}>Log in</span></p>

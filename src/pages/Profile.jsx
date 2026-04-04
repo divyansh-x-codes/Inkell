@@ -69,11 +69,17 @@ export default function Profile({ showToast }) {
     let unsubPosts, unsubActivity, unsubLikes;
 
     if (activeTab === 'Posts') {
-      unsubPosts = subscribeToUserArticles(uid, setPosts);
+      unsubPosts = subscribeToUserArticles(uid, (data) => {
+        setPosts([...data].sort((a,b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0)));
+      });
     } else if (activeTab === 'Activity') {
-      unsubActivity = subscribeToUserActivity(uid, setActivity);
+      unsubActivity = subscribeToUserActivity(uid, (data) => {
+        setActivity([...data].sort((a,b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0)));
+      });
     } else if (activeTab === 'Likes') {
-      unsubLikes = subscribeToUserLikes(uid, setLikedPosts);
+      unsubLikes = subscribeToUserLikes(uid, (data) => {
+        setLikedPosts([...data].sort((a,b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0)));
+      });
     }
 
     return () => {

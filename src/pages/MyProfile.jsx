@@ -1,27 +1,64 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import BottomNav from '../components/BottomNav';
 import ArticleCard from '../components/ArticleCard';
-import { articles } from '../data';
-import { loadMyProfile } from './EditProfile';
+import { useAuth } from '../context/AuthContext';
+import { 
+  subscribeToUserProfile, 
+  subscribeToUserArticles, 
+  subscribeToUserActivity, 
+  subscribeToUserLikes 
+} from '../utils/firebaseData';
 
-const DEFAULT_PROFILE = {
-  name: 'You',
-  handle: '@inkwell_reader',
-  bio: 'Reading enthusiast. Tech, AI, and culture. Subscriber to great ideas.',
-  color: '#1a9e6e',
-  avatar: null,
-};
-
-const TABS = ['Activity', 'Posts', 'Likes', 'Reads'];
+const TABS = ['Activity', 'Posts', 'Likes'];
 
 export default function MyProfile({ showToast }) {
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState('Activity');
+  const { user } = useAuth();
+  const [activeTab, setActiveTab] = useState('Posts');
+  
+  const [profile, setProfile] = useState(null);
+  const [posts, setPosts] = useState([]);
+  const [activity, setActivity] = useState([]);
+  const [likedPosts, setLikedPosts] = useState([]);
+  const [loading, setLoading] = useState(true);
 
-  // Always read fresh from localStorage on each render
-  const profile = loadMyProfile() || DEFAULT_PROFILE;
-  const { name, handle, bio, avatar, color } = profile;
+  // 1. Sync Profile Metadata
+  useEffect(() => {
+    if (!user?.uid) return;
+    const unsub = subscribeToUserProfile(user.uid, (p) => {
+      setProfile(p);
+      setLoading(false);
+    });
+    return () => unsub();
+  }, [user]);
+
+  // 2. Sync Tab Content
+  useEffect(() => {
+    if (!user?.uid) return;
+    
+    let unsubPosts, unsubActivity, unsubLikes;
+    
+    if (activeTab === 'Posts') {
+      unsubPosts = subscribeToUserArticles(user.uid, (data) => {
+        setPosts([...data].sort((a,b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0)));
+      });
+    } else if (activeTab === 'Activity') {
+      unsubActivity = subscribeToUserActivity(user.uid, (data) => {
+        setActivity([...data].sort((a,b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0)));
+      });
+    } else if (activeTab === 'Likes') {
+      unsubLikes = subscribeToUserLikes(user.uid, (data) => {
+        setLikedPosts([...data].sort((a,b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0)));
+      });
+    }
+
+    return () => {
+      unsubPosts?.();
+      unsubActivity?.();
+      unsubLikes?.();
+    };
+  }, [user, activeTab]);
 
   const getInitials = (n) => {
     if (!n) return 'Y';
@@ -29,42 +66,16 @@ export default function MyProfile({ showToast }) {
     return s.length > 1 ? (s[0][0] + s[1][0]).toUpperCase() : n[0].toUpperCase();
   };
 
-  const getLikedArticles = () => {
-    try {
-      const saved = JSON.parse(localStorage.getItem('inkwell_likes') || '{}');
-      return articles.filter(a => saved[a.id]);
-    } catch { return []; }
-  };
-
-  const getReadArticles = () => {
-    try {
-      const saved = JSON.parse(localStorage.getItem('inkwell_reads') || '{}');
-      return articles.filter(a => saved[a.id]);
-    } catch { return []; }
-  };
-
-  const getMyComments = () => {
-    try {
-      const all = JSON.parse(localStorage.getItem('inkwell_comments') || '{}');
-      const mine = [];
-      Object.entries(all).forEach(([articleId, comments]) => {
-        const art = articles.find(a => a.id === parseInt(articleId));
-        if (!art) return;
-        comments.filter(c => c.user === 'You').forEach(c => {
-          mine.push({ ...c, article: art });
-        });
-      });
-      return mine.reverse();
-    } catch { return []; }
-  };
-
-  const likedArticles = getLikedArticles();
-  const readArticles = getReadArticles();
-  const myComments = getMyComments();
+  if (!user) {
+    return (
+      <div className="profile-page app-shell" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#666' }}>
+        <button className="btn-primary" onClick={() => navigate('/login')}>Login to view profile</button>
+      </div>
+    );
+  }
 
   return (
     <div className="profile-page app-shell">
-
       {/* Top bar */}
       <div className="profile-topbar">
         <button className="tb-circle-btn" onClick={() => navigate(-1)}>
@@ -85,18 +96,16 @@ export default function MyProfile({ showToast }) {
 
       <div className="profile-scroll-area">
         <div className="profile-header-main">
-
-          {/* Avatar + Name row */}
           <div className="profile-title-row">
             <div className="profile-info">
-              <h1 className="profile-name-header">{name}</h1>
-              <p className="profile-handle">{handle}</p>
+              <h1 className="profile-name-header">{profile?.name || user.name}</h1>
+              <p className="profile-handle">@{profile?.name?.toLowerCase().replace(/\s/g, '') || user.name?.toLowerCase().replace(/\s/g, '')}</p>
             </div>
-            {avatar
+            {profile?.avatar || user.avatar
               ? (
                 <img
-                  src={avatar}
-                  alt={name}
+                  src={profile?.avatar || user.avatar}
+                  alt="avatar"
                   className="profile-avatar-large"
                   onClick={() => navigate('/edit-profile')}
                   style={{ cursor: 'pointer' }}
@@ -106,21 +115,31 @@ export default function MyProfile({ showToast }) {
                 <div
                   style={{
                     width: 90, height: 90, borderRadius: '50%', flexShrink: 0,
-                    background: color, display: 'flex', alignItems: 'center',
+                    background: profile?.color || '#e85d04', display: 'flex', alignItems: 'center',
                     justifyContent: 'center', fontWeight: 800, fontSize: '2rem',
                     color: 'white', marginLeft: 16, fontFamily: "'DM Sans',sans-serif",
                     cursor: 'pointer',
                   }}
                   onClick={() => navigate('/edit-profile')}
                 >
-                  {getInitials(name)}
+                  {getInitials(profile?.name || user.name)}
                 </div>
               )
             }
           </div>
 
-          <p className="profile-bio">{bio}</p>
-          <p className="profile-subs-count">3 subscribers</p>
+          <p className="profile-bio">{profile?.bio || 'Sharing stories on Inkwell.'}</p>
+          
+          <div style={{ display: 'flex', gap: '20px', marginTop: '12px', marginBottom: '4px' }}>
+            <div style={{ fontSize: '0.92rem', color: 'var(--white)' }}>
+              <span style={{ fontWeight: 700 }}>{profile?.followersCount || 0}</span> 
+              <span style={{ color: 'var(--gray)', marginLeft: '6px' }}>Subscribers</span>
+            </div>
+            <div style={{ fontSize: '0.92rem', color: 'var(--white)' }}>
+              <span style={{ fontWeight: 700 }}>{profile?.followingCount || 0}</span> 
+              <span style={{ color: 'var(--gray)', marginLeft: '6px' }}>Following</span>
+            </div>
+          </div>
 
           <div className="profile-action-buttons">
             <button
@@ -130,7 +149,7 @@ export default function MyProfile({ showToast }) {
             >
               Edit Profile
             </button>
-            <button className="btn-share-icon" onClick={() => showToast('Profile link copied!')}>
+            <button className="btn-share-icon" onClick={() => { navigator.clipboard.writeText(window.location.href); showToast('Profile link copied!'); }}>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ width: '20px', height: '20px' }}>
                 <line x1="22" y1="2" x2="11" y2="13"></line>
                 <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
@@ -154,59 +173,48 @@ export default function MyProfile({ showToast }) {
 
         {/* Content */}
         <div className="profile-feed">
-
           {activeTab === 'Activity' && (
-            myComments.length === 0
+            activity.length === 0
               ? <div style={{ textAlign: 'center', color: '#666', padding: '40px 20px', fontSize: '0.95rem' }}>
                   No activity yet. Start reading and commenting!
                 </div>
-              : myComments.map((c, i) => (
+              : activity.map((c, i) => (
                 <div
                   key={i}
                   className="profile-post"
                   style={{ cursor: 'pointer' }}
-                  onClick={() => navigate(`/comments/${c.article?.id}`)}
+                  onClick={() => navigate(`/comments/${c.blogId}`)}
                 >
                   <div style={{ fontSize: '0.75rem', color: '#e85d04', fontWeight: 700, marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-                    {c.article?.name}
-                  </div>
-                  <div style={{ color: 'var(--white)', fontWeight: 600, marginBottom: 6, fontSize: '0.95rem', lineHeight: 1.3 }}>
-                    {c.article?.title}
+                    Activity
                   </div>
                   <div style={{ color: '#aaa', fontSize: '0.9rem', marginBottom: 8 }}>
-                    💬 "{c.text}"
+                    💬 "{c.content}"
                   </div>
-                  <div style={{ color: '#555', fontSize: '0.8rem' }}>{c.time}</div>
+                  <div style={{ color: '#555', fontSize: '0.8rem' }}>{c.createdAt?.toDate ? new Date(c.createdAt.toDate()).toLocaleDateString() : 'Just now'}</div>
                 </div>
               ))
           )}
 
           {activeTab === 'Likes' && (
-            likedArticles.length === 0
+            likedPosts.length === 0
               ? <div style={{ textAlign: 'center', color: '#666', padding: '40px 20px', fontSize: '0.95rem' }}>
                   No liked articles yet. Heart any article to save it here.
                 </div>
               : <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                  {likedArticles.map(a => <ArticleCard key={a.id} article={a} showToast={showToast} />)}
-                </div>
-          )}
-
-          {activeTab === 'Reads' && (
-            readArticles.length === 0
-              ? <div style={{ textAlign: 'center', color: '#666', padding: '40px 20px', fontSize: '0.95rem' }}>
-                  No articles read yet. Tap any article to start.
-                </div>
-              : <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                  {readArticles.map(a => <ArticleCard key={a.id} article={a} showToast={showToast} />)}
+                  {likedPosts.map(a => <ArticleCard key={a.id} article={a} showToast={showToast} />)}
                 </div>
           )}
 
           {activeTab === 'Posts' && (
-            <div style={{ textAlign: 'center', color: '#666', padding: '40px 20px', fontSize: '0.95rem' }}>
-              You haven't published any posts yet.
-            </div>
+            posts.length === 0
+              ? <div style={{ textAlign: 'center', color: '#666', padding: '40px 20px', fontSize: '0.95rem' }}>
+                  You haven't published any posts yet.
+                </div>
+              : <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                  {posts.map(a => <ArticleCard key={a.id} article={a} showToast={showToast} isDashboard />)}
+                </div>
           )}
-
         </div>
       </div>
 
