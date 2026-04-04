@@ -5,9 +5,9 @@ import { useAuth } from '../context/AuthContext';
 import {
   subscribeToConversations,
   searchUsersByName,
-  getConversationId
+  getConversationId,
+  clearUserUnread
 } from '../utils/firebaseData';
-import { clearUnread } from '../utils/unread';
 
 const getInitials = (name) => {
   if (!name) return 'U';
@@ -90,8 +90,8 @@ export default function Conversations({ showToast }) {
   };
 
   const openThread = (conv, otherId, otherInfo) => {
-    // Clear unread count locally when entering thread
-    clearUnread(conv.id);
+    // Clear server-side unread count when entering thread
+    if (user?.uid) clearUserUnread(conv.id, user.uid);
     navigate(`/chat/${conv.id}`, {
       state: {
         recipientUserId: otherId,
@@ -171,6 +171,7 @@ export default function Conversations({ showToast }) {
           conversations.map(conv => {
             const otherId = conv.participants.find(id => id !== user.uid);
             const otherInfo = conv.participantInfo?.[otherId] || { name: 'User', avatar: null };
+            const myUnread = conv.unreadCount?.[user.uid] || 0;
 
             return (
               <div
@@ -186,13 +187,28 @@ export default function Conversations({ showToast }) {
                 </div>
                 <div className="conv-content">
                   <div className="conv-top-row">
-                    <span className="conv-name">{otherInfo.name}</span>
+                    <span className="conv-name" style={{ fontWeight: myUnread > 0 ? 700 : 500 }}>{otherInfo.name}</span>
                     <span className="conv-time">{getTimeAgo(conv.lastMessageTime)}</span>
                   </div>
-                  <p className="conv-preview" style={{ color: conv.lastSenderId !== user.uid ? 'var(--white)' : 'var(--gray)' }}>
+                  <p className="conv-preview" style={{
+                    color: myUnread > 0 ? 'var(--white)' : (conv.lastSenderId !== user.uid ? 'var(--white)' : 'var(--gray)'),
+                    fontWeight: myUnread > 0 ? 600 : 400
+                  }}>
                     {conv.lastSenderId === user.uid ? `You: ${conv.lastMessage}` : conv.lastMessage}
                   </p>
                 </div>
+                {myUnread > 0 && (
+                  <div style={{
+                    minWidth: 20, height: 20, borderRadius: 10,
+                    background: '#e85d04', color: 'white',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    fontSize: '0.7rem', fontWeight: 800, flexShrink: 0,
+                    fontFamily: "'DM Sans', sans-serif",
+                    padding: '0 5px',
+                  }}>
+                    {myUnread > 9 ? '9+' : myUnread}
+                  </div>
+                )}
               </div>
             );
           })

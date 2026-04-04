@@ -380,6 +380,7 @@ export const sendMessage = async (convoId, sender, text, receiver) => {
     });
 
     // Update conversation metadata with names/avatars for the list view
+    // Also increment server-side unread counter for the RECEIVER
     await setDoc(doc(db, CONVOS_COL, convoId), {
       participants: arrayUnion(sender.uid, receiver.id),
       participantInfo: {
@@ -396,6 +397,18 @@ export const sendMessage = async (convoId, sender, text, receiver) => {
       lastMessageTime: serverTimestamp(),
       lastSenderId: sender.uid,
     }, { merge: true });
+
+    // Increment unread count for the receiver (server-side persistent)
+    try {
+      await updateDoc(doc(db, CONVOS_COL, convoId), {
+        [`unreadCount.${receiver.id}`]: increment(1),
+      });
+    } catch {
+      // If doc doesn't exist yet, set it
+      await setDoc(doc(db, CONVOS_COL, convoId), {
+        unreadCount: { [receiver.id]: 1 },
+      }, { merge: true });
+    }
 
     return { error: null };
   } catch (error) { return { error }; }
@@ -415,17 +428,35 @@ export const subscribeToMessages = (convoId, setMessages) => {
 };
 
 export const subscribeToConversations = (userId, setConvos) => {
+  // No orderBy here — avoids composite index requirement
   const q = query(
     collection(db, CONVOS_COL),
-    where("participants", "array-contains", userId),
-    orderBy("lastMessageTime", "desc")
+    where("participants", "array-contains", userId)
   );
   return onSnapshot(q, (snapshot) => {
-    setConvos(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
+    const convos = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+    // Sort client-side by lastMessageTime (newest first)
+    convos.sort((a, b) => {
+      const ta = a.lastMessageTime?.seconds || 0;
+      const tb = b.lastMessageTime?.seconds || 0;
+      return tb - ta;
+    });
+    setConvos(convos);
   }, (err) => {
     console.error("Conversations sync failed:", err.message);
     setConvos([]);
   });
+};
+
+// ─── Clear unread count (server-side) ─────────────────────────────────────
+export const clearUserUnread = async (convoId, userId) => {
+  try {
+    await updateDoc(doc(db, CONVOS_COL, convoId), {
+      [`unreadCount.${userId}`]: 0,
+    });
+  } catch (err) {
+    console.warn("clearUserUnread failed:", err.message);
+  }
 };
 
 // ─── One-time fetch (fallback for Search) ─────────────────────────────────────

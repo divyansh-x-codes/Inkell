@@ -4,7 +4,6 @@ import BottomNav from '../components/BottomNav';
 import ArticleCard from '../components/ArticleCard';
 import { useAuth } from '../context/AuthContext';
 import { subscribeToBlogs, subscribeToFollowedBlogs } from '../utils/firebaseData';
-import { getTotalUnread } from '../utils/unread';
 
 const getInitials = (name) => {
   if (!name) return 'U';
@@ -14,10 +13,9 @@ const getInitials = (name) => {
 
 export default function Home({ showToast }) {
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, unreadCount } = useAuth();
   const [articles, setArticles] = useState([]);
   const [followedArticles, setFollowedArticles] = useState([]);
-  const [unread, setUnread] = useState(getTotalUnread);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('forYou');
 
@@ -40,16 +38,6 @@ export default function Home({ showToast }) {
     });
   }, [user]);
 
-  // ── Unread badge ───────────────────────────────────────────
-  useEffect(() => {
-    const refresh = () => setUnread(getTotalUnread());
-    window.addEventListener('inkwell_unread_changed', refresh);
-    window.addEventListener('focus', refresh);
-    return () => {
-      window.removeEventListener('inkwell_unread_changed', refresh);
-      window.removeEventListener('focus', refresh);
-    };
-  }, []);
 
   const displayName = user?.name || user?.displayName || 'User';
   const displayAvatar = user?.avatar || user?.photoURL || null;
@@ -87,8 +75,8 @@ export default function Home({ showToast }) {
                 <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
                 <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
               </svg>
-              {unread > 0 && (
-                <div className="topbar-badge">{unread > 9 ? '9+' : unread}</div>
+              {unreadCount > 0 && (
+                <div className="topbar-badge">{unreadCount > 9 ? '9+' : unreadCount}</div>
               )}
             </button>
 

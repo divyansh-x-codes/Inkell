@@ -11,6 +11,7 @@ import {
   signOut as firebaseSignOut,
 } from 'firebase/auth';
 import { doc, setDoc, getDoc, serverTimestamp } from 'firebase/firestore';
+import { subscribeToConversations } from '../utils/firebaseData';
 
 const AuthContext = createContext();
 
@@ -19,6 +20,7 @@ export const useAuth = () => useContext(AuthContext);
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [unreadCount, setUnreadCount] = useState(0);
 
   // Sync user info to Firestore "users" collection
   const syncUserToFirestore = async (firebaseUser, additionalInfo = {}) => {
@@ -79,6 +81,23 @@ export const AuthProvider = ({ children }) => {
     return () => unsubscribe();
   }, []);
 
+  // ── Global real-time unread counter ────────────────────────────────
+  useEffect(() => {
+    if (!user?.uid) {
+      setUnreadCount(0);
+      return;
+    }
+    const unsub = subscribeToConversations(user.uid, (convos) => {
+      let total = 0;
+      convos.forEach(c => {
+        const myUnread = c.unreadCount?.[user.uid] || 0;
+        total += myUnread;
+      });
+      setUnreadCount(total);
+    });
+    return () => unsub();
+  }, [user?.uid]);
+
   // Email/Password Auth
   const signUp = async (name, email, password) => {
     try {
@@ -134,7 +153,7 @@ export const AuthProvider = ({ children }) => {
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, signUp, logIn, loginWithGoogle, signIn, signOut }}>
+    <AuthContext.Provider value={{ user, loading, unreadCount, signUp, logIn, loginWithGoogle, signIn, signOut }}>
       {!loading && children}
     </AuthContext.Provider>
   );

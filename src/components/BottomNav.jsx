@@ -1,22 +1,10 @@
-import { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { getTotalUnread } from '../utils/unread';
+import { useAuth } from '../context/AuthContext';
 
 export default function BottomNav({ showToast }) {
   const navigate = useNavigate();
   const location = useLocation();
-  const [unread, setUnread] = useState(getTotalUnread);
-
-  // Re-read badge whenever storage changes
-  useEffect(() => {
-    const refresh = () => setUnread(getTotalUnread());
-    window.addEventListener('inkwell_unread_changed', refresh);
-    window.addEventListener('focus', refresh);
-    return () => {
-      window.removeEventListener('inkwell_unread_changed', refresh);
-      window.removeEventListener('focus', refresh);
-    };
-  }, []);
+  const { unreadCount } = useAuth();
 
   const handleNav = (path, toastMsg = null) => {
     if (toastMsg) { showToast(toastMsg); } else { navigate(path); }
@@ -48,7 +36,7 @@ export default function BottomNav({ showToast }) {
         </svg>
       </div>
 
-      {/* Messages — with unread badge */}
+      {/* Messages — with server-synced unread badge */}
       <div
         className={`nav-item ${isActive('/conversations') ? 'active' : ''}`}
         onClick={() => handleNav('/conversations')}
@@ -57,17 +45,17 @@ export default function BottomNav({ showToast }) {
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
         </svg>
-        {unread > 0 && (
+        {unreadCount > 0 && (
           <div style={{
             position: 'absolute', top: -2, right: -2,
             background: '#e85d04', color: 'white',
-            width: unread > 9 ? 18 : 16, height: 16,
+            width: unreadCount > 9 ? 18 : 16, height: 16,
             borderRadius: 8, fontSize: '0.65rem', fontWeight: 800,
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             fontFamily: "'DM Sans', sans-serif", lineHeight: 1,
             border: '1.5px solid #0d0d0d',
           }}>
-            {unread > 9 ? '9+' : unread}
+            {unreadCount > 9 ? '9+' : unreadCount}
           </div>
         )}
       </div>

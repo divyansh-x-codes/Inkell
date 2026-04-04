@@ -1,8 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { useNavigate, useLocation, useParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { subscribeToMessages, sendMessage, getUserProfile } from '../utils/firebaseData';
-import { clearUnread } from '../utils/unread';
+import { subscribeToMessages, sendMessage, getUserProfile, clearUserUnread } from '../utils/firebaseData';
 
 export default function ChatThread({ showToast }) {
   const navigate = useNavigate();
@@ -42,20 +41,20 @@ export default function ChatThread({ showToast }) {
 
   // 2. Real-time subscription & Clear Unread
   useEffect(() => {
-    if (!id) return;
+    if (!id || !user?.uid) return;
     
-    // Clear unread for this thread when entering
-    clearUnread(id);
+    // Clear server-side unread for this thread when entering
+    clearUserUnread(id, user.uid);
 
     const unsubscribe = subscribeToMessages(id, (data) => {
       setMessages(data);
       setLoading(false);
       // Clear unread again if new messages arrive while we are here
-      clearUnread(id);
+      clearUserUnread(id, user.uid);
     });
     
     return () => unsubscribe();
-  }, [id]);
+  }, [id, user?.uid]);
 
   // 3. Auto scroll to bottom
   useEffect(() => {
