@@ -1,8 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { useNavigate, useLocation, useParams } from 'react-router-dom';
 import { addUnread, clearUnread } from '../utils/unread';
-import { useAuth } from '../context/AuthContext';
-import { supabase } from '../supabaseClient';
 
 const seedThreads = {
   '1': [
@@ -11,13 +9,19 @@ const seedThreads = {
     { id: 3, from: 'them', text: 'The part about dependency vs efficiency was eye-opening honestly', time: '10:15 AM' },
     { id: 4, from: 'me', text: 'Yeah that was the core insight for me too. Took me a while to realise I was just avoiding discomfort 😅', time: '10:17 AM' },
   ],
+  '2': [
+    { id: 1, from: 'them', text: 'Your design piece was incredibly refreshing.', time: '9:00 AM' },
+    { id: 2, from: 'me', text: 'Thanks, I put a lot of thought into that one!', time: '9:05 AM' },
+  ],
+  '3': [
+    { id: 1, from: 'them', text: 'The startup culture article was spot on 👌', time: '8:30 AM' },
+  ],
 };
 
 export default function ChatThread({ showToast }) {
   const navigate = useNavigate();
   const location = useLocation();
   const { id } = useParams();
-  const { user } = useAuth();
 
   const creator = location.state?.creator || {
     name: 'Creator',
@@ -26,10 +30,8 @@ export default function ChatThread({ showToast }) {
     avatar: null,
   };
 
-  const [messages, setMessages] = useState([]);
+  const [messages, setMessages] = useState(seedThreads[id] || []);
   const [input, setInput] = useState('');
-  const [typing, setTyping] = useState(false);
-  const [loading, setLoading] = useState(true);
   const bottomRef = useRef(null);
 
   // Clear unread on entry
@@ -37,99 +39,36 @@ export default function ChatThread({ showToast }) {
     clearUnread(id);
   }, [id]);
 
-  // Load messages from Supabase
-  useEffect(() => {
-    async function loadMessages() {
-      // For now, if ID is numeric (mock), we use seed data. 
-      // In a real app, 'id' would be a UUID from our 'conversations' table.
-      if (!id.includes('-') && seedThreads[id]) {
-        setMessages(seedThreads[id]);
-        setLoading(false);
-        return;
-      }
-
-      const { data, error } = await supabase
-        .from('messages')
-        .select('*')
-        .eq('conversation_id', id)
-        .order('created_at', { ascending: true });
-
-      if (error) {
-        console.error('Error loading messages:', error);
-      } else {
-        setMessages(data.map(m => ({
-          id: m.id,
-          from: m.sender_id === user?.id ? 'me' : 'them',
-          text: m.content,
-          time: new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-        })));
-      }
-      setLoading(false);
-    }
-
-    loadMessages();
-
-    // Subscribe to new messages
-    const channel = supabase
-      .channel(`chat_${id}`)
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `conversation_id=eq.${id}` }, 
-      (payload) => {
-        const m = payload.new;
-        if (m.sender_id !== user?.id) {
-          setMessages(prev => [...prev, {
-            id: m.id,
-            from: 'them',
-            text: m.content,
-            time: new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-          }]);
-          addUnread(id);
-        }
-      })
-      .subscribe();
-
-    return () => supabase.removeChannel(channel);
-  }, [id, user]);
-
   // Auto scroll to bottom
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, typing]);
+  }, [messages]);
 
-  const sendMessage = async () => {
+  const sendMessage = () => {
     const text = input.trim();
-    if (!text || !user) return;
+    if (!text) return;
 
-    // Optimistic update
-    const tempId = Date.now();
-    const newMsgLocal = {
-      id: tempId,
+    const newMsg = {
+      id: Date.now(),
       from: 'me',
       text,
       time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
     };
-    setMessages(prev => [...prev, newMsgLocal]);
+    setMessages(prev => [...prev, newMsg]);
     setInput('');
 
-    // If it's a mock ID, we don't save to Supabase (user should create real conversations)
-    if (!id.includes('-')) {
-      showToast('Live chat requires a real Supabase conversation ID');
-      return;
-    }
-
-    const { error } = await supabase
-      .from('messages')
-      .insert([
-        { conversation_id: id, sender_id: user.id, content: text }
-      ]);
-
-    if (error) {
-      showToast(error.message);
-      // Remove optimistic message if error
-      setMessages(prev => prev.filter(m => m.id !== tempId));
-    }
+    // Simulate reply after a delay
+    setTimeout(() => {
+      const reply = {
+        id: Date.now() + 1,
+        from: 'them',
+        text: '👍 Got it!',
+        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      };
+      setMessages(prev => [...prev, reply]);
+      addUnread(id);
+    }, 1500);
   };
-
-  if (loading) return <div style={{padding:'20px', color:'white'}}>Loading chat...</div>;
 
   return (
     <div className="chat-page app-shell">
@@ -177,33 +116,18 @@ export default function ChatThread({ showToast }) {
           </div>
         ))}
 
-        {typing && (
-          <div className="chat-bubble-row theirs">
-            {creator.avatar
-              ? <img src={creator.avatar} alt="" className="chat-bubble-avatar" />
-              : <div className="chat-bubble-avatar-letter" style={{ background: creator.color }}>{(creator.initials || 'C')[0]}</div>
-            }
-            <div className="chat-bubble-group">
-              <div className="chat-bubble bubble-theirs typing-indicator">
-                <span></span><span></span><span></span>
-              </div>
-            </div>
-          </div>
-        )}
-
         <div ref={bottomRef} />
       </div>
 
       <div className="chat-input-bar">
         <input
           className="chat-text-input"
-          placeholder={user ? `Message ${(creator.name || 'Creator').split(' ')[0]}…` : "Log in to chat..."}
+          placeholder={`Message ${(creator.name || 'Creator').split(' ')[0]}…`}
           value={input}
           onChange={e => setInput(e.target.value)}
           onKeyDown={e => e.key === 'Enter' && sendMessage()}
-          disabled={!user}
         />
-        <button className="chat-send-btn" onClick={sendMessage} disabled={!input.trim() || !user}>
+        <button className="chat-send-btn" onClick={sendMessage} disabled={!input.trim()}>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
             <line x1="22" y1="2" x2="11" y2="13"></line>
             <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>

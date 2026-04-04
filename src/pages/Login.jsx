@@ -1,34 +1,22 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { supabase } from '../supabaseClient';
+import { useAuth } from '../context/AuthContext';
 
 export default function Login({ showToast }) {
   const navigate = useNavigate();
+  const { signIn } = useAuth();
+  const [name, setName] = useState('');
   const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [loading, setLoading] = useState(false);
 
-  const doLogin = async () => {
-    if (!email || !password) {
-      showToast('Please fill in all fields');
+  const doLogin = () => {
+    if (!email) {
+      showToast('Please enter your email');
       return;
     }
-    
-    setLoading(true);
-    showToast('Logging in...');
-    
-    const { error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
-
-    setLoading(false);
-    if (error) {
-      showToast(error.message);
-    } else {
-      showToast('Login successful!');
-      navigate('/home');
-    }
+    const displayName = name || email.split('@')[0];
+    signIn(displayName, email);
+    showToast('Welcome back!');
+    navigate('/home');
   };
 
   return (
@@ -40,32 +28,25 @@ export default function Login({ showToast }) {
       <p className="screen-sub">Log in to your Inkwell account</p>
 
       <div className="input-group">
-        <label>Email</label>
-        <input 
-          type="email" 
-          placeholder="you@example.com" 
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          disabled={loading}
+        <label>Name (optional)</label>
+        <input
+          type="text"
+          placeholder="Your name"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
         />
       </div>
       <div className="input-group">
-        <label>Password</label>
-        <input 
-          type="password" 
-          placeholder="••••••••" 
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          disabled={loading}
+        <label>Email</label>
+        <input
+          type="email"
+          placeholder="you@example.com"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
         />
       </div>
-      <button 
-        className="btn-primary" 
-        style={{ marginTop: '8px' }} 
-        onClick={doLogin}
-        disabled={loading}
-      >
-        {loading ? 'Processing...' : 'Continue'}
+      <button className="btn-primary" style={{ marginTop: '8px' }} onClick={doLogin}>
+        Continue
       </button>
 
       <p className="switch-auth">Don't have an account? <span onClick={() => navigate('/signup')}>Sign up</span></p>

@@ -3,7 +3,6 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { articles as mockArticles } from '../data';
 import BottomNav from '../components/BottomNav';
 import { useAuth } from '../context/AuthContext';
-import { supabase } from '../supabaseClient';
 
 function Poll({ poll, showToast }) {
   const [voted, setVoted] = useState(false);
@@ -47,19 +46,14 @@ export default function Reader({ showToast }) {
   const [likesCount, setLikesCount] = useState(0);
 
   useEffect(() => {
-    async function load() {
-      const { data, error } = await supabase.from('articles').select('*').eq('id', id).single();
-      const art = data || mockArticles.find(a => a.id === parseInt(id));
-      
-      if (art) {
-        setArticle(art);
-        setLikesCount(art.likes_count || parseInt(art.likes) || 0);
-        setLiked(!!getLS('inkwell_likes')[art.id]);
-        setSaved(!!getLS('inkwell_saves')[art.id]);
-      }
-      setLoading(false);
+    const art = mockArticles.find(a => String(a.id) === String(id));
+    if (art) {
+      setArticle(art);
+      setLikesCount(parseInt(art.likes) || 0);
+      setLiked(!!getLS('inkwell_likes')[art.id]);
+      setSaved(!!getLS('inkwell_saves')[art.id]);
     }
-    load();
+    setLoading(false);
   }, [id]);
 
   useEffect(() => {
@@ -71,7 +65,7 @@ export default function Reader({ showToast }) {
     } catch {}
   }, [article]);
 
-  if (loading) return <div style={{ color: 'white', padding: '20px' }}>Loading article...</div>;
+  if (loading) return null;
   if (!article) return <div style={{ color: 'white', padding: '20px' }}>Article not found</div>;
 
   const getInitials = (name) => {

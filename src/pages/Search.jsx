@@ -2,7 +2,6 @@ import { useState, useMemo, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import BottomNav from '../components/BottomNav';
 import { articles as mockArticles } from '../data';
-import { fetchArticles } from '../utils/supabaseData';
 
 const CATEGORIES = ['All', 'Technology', 'Design', 'Digital Media', 'Politics', 'Emerging Tech', 'Productivity'];
 
@@ -20,17 +19,7 @@ export default function Search({ showToast }) {
   const [query, setQuery] = useState('');
   const [activeCategory, setActiveCategory] = useState('All');
   const [focused, setFocused] = useState(false);
-  const [articles, setArticles] = useState([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    async function load() {
-      const data = await fetchArticles();
-      setArticles(data.length > 0 ? data : mockArticles);
-      setLoading(false);
-    }
-    load();
-  }, []);
+  const articles = mockArticles;
 
   const AUTHORS = useMemo(() => {
     const map = new Map();
@@ -114,118 +103,112 @@ export default function Search({ showToast }) {
         </div>
 
         <div style={{ flex: 1, overflowY: 'auto', scrollbarWidth: 'none' }}>
-          {loading ? (
-            <div style={{ textAlign: 'center', padding: '40px', color: '#888' }}>
-              Scaling the archive...
-            </div>
-          ) : (
-            <div style={{ paddingBottom: 90 }}>
-              {matchedAuthors.length > 0 && (
-                <div style={{ padding: '4px 0 8px' }}>
-                  <div style={{ padding: '8px 20px 6px', fontSize: '0.7rem', fontWeight: 700, color: '#555', textTransform: 'uppercase', letterSpacing: '0.1em' }}>
-                    Authors
-                  </div>
-                  {matchedAuthors.map(a => (
-                    <div
-                      key={a.name}
-                      style={{
-                        display: 'flex', alignItems: 'center', gap: 14,
-                        padding: '12px 20px', cursor: 'pointer'
-                      }}
-                      onClick={() => navigate(`/profile/${encodeURIComponent(a.name)}`)}
-                    >
-                      <div style={{
-                        width: 44, height: 44, borderRadius: '50%', flexShrink: 0,
-                        background: colorFor(a.name), display: 'flex', alignItems: 'center',
-                        justifyContent: 'center', fontWeight: 700, fontSize: '0.9rem', color: 'white'
-                      }}>
-                        {getInitials(a.name)}
-                      </div>
-                      <div>
-                        <div style={{ color: 'var(--white)', fontWeight: 600, fontSize: '0.95rem' }}>{a.name}</div>
-                        <div style={{ color: '#555', fontSize: '0.8rem' }}>{a.count} article{a.count !== 1 ? 's' : ''}</div>
-                      </div>
-                      <svg viewBox="0 0 24 24" fill="none" stroke="#444" strokeWidth="2" style={{ width: 16, height: 16, marginLeft: 'auto' }}>
-                        <polyline points="9 18 15 12 9 6"></polyline>
-                      </svg>
-                    </div>
-                  ))}
-                  <div style={{ height: 1, background: '#1a1a1a', margin: '4px 0' }}></div>
+          <div style={{ paddingBottom: 90 }}>
+            {matchedAuthors.length > 0 && (
+              <div style={{ padding: '4px 0 8px' }}>
+                <div style={{ padding: '8px 20px 6px', fontSize: '0.7rem', fontWeight: 700, color: '#555', textTransform: 'uppercase', letterSpacing: '0.1em' }}>
+                  Authors
                 </div>
-              )}
-
-              {matchedArticles.length === 0 && matchedAuthors.length === 0 && (
-                <div style={{ textAlign: 'center', padding: '60px 24px', color: '#555' }}>
-                  <div style={{ fontSize: '2rem', marginBottom: 12 }}>🔍</div>
-                  <div style={{ color: 'var(--white)', fontWeight: 600, marginBottom: 8 }}>No results found</div>
-                  <div style={{ fontSize: '0.9rem' }}>Try a different keyword or category</div>
-                </div>
-              )}
-
-              {isSearching && matchedArticles.length > 0 && (
-                <div style={{ padding: '8px 20px 4px', fontSize: '0.7rem', fontWeight: 700, color: '#555', textTransform: 'uppercase', letterSpacing: '0.1em' }}>
-                  Articles ({matchedArticles.length})
-                </div>
-              )}
-
-              {!isSearching && matchedArticles[0] && (
-                <div
-                  className="search-hero-card"
-                  onClick={() => navigate(`/article/${matchedArticles[0].id}`)}
-                >
-                  <img src={matchedArticles[0].cover_image || matchedArticles[0].coverImage} className="hero-bg" alt="Cover" />
-                  <div className="hero-overlay"></div>
-                  <div className="hero-content">
-                    <div style={{ fontSize: '0.7rem', fontWeight: 700, color: '#e85d04', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 }}>
-                      {matchedArticles[0].category}
-                    </div>
-                    <h2 className="hero-title">{matchedArticles[0].title}</h2>
-                    <div style={{ fontSize: '0.8rem', color: 'rgba(255,255,255,0.6)', marginTop: 6 }}>
-                      {matchedArticles[0].author_name || matchedArticles[0].name} · {matchedArticles[0].readTime || '4 min read'}
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              <div className="search-feed-list">
-                {(isSearching ? matchedArticles : matchedArticles.slice(1)).map(article => (
+                {matchedAuthors.map(a => (
                   <div
-                    className="search-list-item"
-                    key={article.id}
-                    onClick={() => navigate(`/article/${article.id}`)}
+                    key={a.name}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 14,
+                      padding: '12px 20px', cursor: 'pointer'
+                    }}
+                    onClick={() => navigate(`/profile/${encodeURIComponent(a.name)}`)}
                   >
-                    <div className="list-text-col">
-                      <div style={{ fontSize: '0.7rem', fontWeight: 700, color: '#e85d04', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>
-                        {article.category}
-                      </div>
-                      <h3 className="list-title">{article.title}</h3>
-                      {article.tagline && (
-                        <p style={{ fontSize: '0.8rem', color: '#666', marginTop: 4, lineHeight: 1.4, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
-                          {article.tagline}
-                        </p>
-                      )}
-                      <div style={{ fontSize: '0.75rem', color: '#555', marginTop: 6, display: 'flex', alignItems: 'center', gap: 4 }}>
-                        <span
-                          style={{ cursor: 'pointer', color: '#888' }}
-                          onClick={e => { e.stopPropagation(); navigate(`/profile/${encodeURIComponent(article.author_name || article.name)}`); }}
-                        >
-                          {article.author_name || article.name}
-                        </span>
-                        <span>·</span>
-                        <span>{article.readTime || '5 min read'}</span>
-                      </div>
+                    <div style={{
+                      width: 44, height: 44, borderRadius: '50%', flexShrink: 0,
+                      background: colorFor(a.name), display: 'flex', alignItems: 'center',
+                      justifyContent: 'center', fontWeight: 700, fontSize: '0.9rem', color: 'white'
+                    }}>
+                      {getInitials(a.name)}
                     </div>
-                    <div className="list-img-col">
-                      {(article.cover_image || article.coverImage)
-                        ? <img src={article.cover_image || article.coverImage} alt="thumbnail" />
-                        : <div className="fallback-img">{article.title[0]}</div>
-                      }
+                    <div>
+                      <div style={{ color: 'var(--white)', fontWeight: 600, fontSize: '0.95rem' }}>{a.name}</div>
+                      <div style={{ color: '#555', fontSize: '0.8rem' }}>{a.count} article{a.count !== 1 ? 's' : ''}</div>
                     </div>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="#444" strokeWidth="2" style={{ width: 16, height: 16, marginLeft: 'auto' }}>
+                      <polyline points="9 18 15 12 9 6"></polyline>
+                    </svg>
                   </div>
                 ))}
+                <div style={{ height: 1, background: '#1a1a1a', margin: '4px 0' }}></div>
               </div>
+            )}
+
+            {matchedArticles.length === 0 && matchedAuthors.length === 0 && (
+              <div style={{ textAlign: 'center', padding: '60px 24px', color: '#555' }}>
+                <div style={{ fontSize: '2rem', marginBottom: 12 }}>🔍</div>
+                <div style={{ color: 'var(--white)', fontWeight: 600, marginBottom: 8 }}>No results found</div>
+                <div style={{ fontSize: '0.9rem' }}>Try a different keyword or category</div>
+              </div>
+            )}
+
+            {isSearching && matchedArticles.length > 0 && (
+              <div style={{ padding: '8px 20px 4px', fontSize: '0.7rem', fontWeight: 700, color: '#555', textTransform: 'uppercase', letterSpacing: '0.1em' }}>
+                Articles ({matchedArticles.length})
+              </div>
+            )}
+
+            {!isSearching && matchedArticles[0] && (
+              <div
+                className="search-hero-card"
+                onClick={() => navigate(`/article/${matchedArticles[0].id}`)}
+              >
+                <img src={matchedArticles[0].cover_image || matchedArticles[0].coverImage} className="hero-bg" alt="Cover" />
+                <div className="hero-overlay"></div>
+                <div className="hero-content">
+                  <div style={{ fontSize: '0.7rem', fontWeight: 700, color: '#e85d04', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 }}>
+                    {matchedArticles[0].category}
+                  </div>
+                  <h2 className="hero-title">{matchedArticles[0].title}</h2>
+                  <div style={{ fontSize: '0.8rem', color: 'rgba(255,255,255,0.6)', marginTop: 6 }}>
+                    {matchedArticles[0].author_name || matchedArticles[0].name} · {matchedArticles[0].readTime || '4 min read'}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <div className="search-feed-list">
+              {(isSearching ? matchedArticles : matchedArticles.slice(1)).map(article => (
+                <div
+                  className="search-list-item"
+                  key={article.id}
+                  onClick={() => navigate(`/article/${article.id}`)}
+                >
+                  <div className="list-text-col">
+                    <div style={{ fontSize: '0.7rem', fontWeight: 700, color: '#e85d04', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>
+                      {article.category}
+                    </div>
+                    <h3 className="list-title">{article.title}</h3>
+                    {article.tagline && (
+                      <p style={{ fontSize: '0.8rem', color: '#666', marginTop: 4, lineHeight: 1.4, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                        {article.tagline}
+                      </p>
+                    )}
+                    <div style={{ fontSize: '0.75rem', color: '#555', marginTop: 6, display: 'flex', alignItems: 'center', gap: 4 }}>
+                      <span
+                        style={{ cursor: 'pointer', color: '#888' }}
+                        onClick={e => { e.stopPropagation(); navigate(`/profile/${encodeURIComponent(article.author_name || article.name)}`); }}
+                      >
+                        {article.author_name || article.name}
+                      </span>
+                      <span>·</span>
+                      <span>{article.readTime || '5 min read'}</span>
+                    </div>
+                  </div>
+                  <div className="list-img-col">
+                    {(article.cover_image || article.coverImage)
+                      ? <img src={article.cover_image || article.coverImage} alt="thumbnail" />
+                      : <div className="fallback-img">{article.title[0]}</div>
+                    }
+                  </div>
+                </div>
+              ))}
             </div>
-          )}
+          </div>
         </div>
 
         <BottomNav showToast={showToast} />

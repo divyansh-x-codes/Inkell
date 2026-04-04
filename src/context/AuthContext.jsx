@@ -1,44 +1,31 @@
-import { createContext, useContext, useEffect, useState } from 'react';
-import { supabase } from '../supabaseClient';
+import { createContext, useContext, useState } from 'react';
 
 const AuthContext = createContext();
 
 export const useAuth = () => useContext(AuthContext);
 
 export const AuthProvider = ({ children }) => {
-  const [user, setUser] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [user, setUser] = useState(() => {
+    const saved = localStorage.getItem('inkwell_user');
+    return saved ? JSON.parse(saved) : null;
+  });
 
-  useEffect(() => {
-    // Check initial session
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setUser(session?.user ?? null);
-      setLoading(false);
-    });
-
-    // Listen for auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null);
-      setLoading(false);
-    });
-
-    return () => subscription.unsubscribe();
-  }, []);
-
-  const signOut = async () => {
-    const { error } = await supabase.auth.signOut();
-    return { error };
+  const signIn = (name, email) => {
+    const u = { name, email };
+    localStorage.setItem('inkwell_user', JSON.stringify(u));
+    localStorage.setItem('inkwell_user_name', name);
+    setUser(u);
   };
 
-  const value = {
-    user,
-    loading,
-    signOut
+  const signOut = () => {
+    localStorage.removeItem('inkwell_user');
+    localStorage.removeItem('inkwell_user_name');
+    setUser(null);
   };
 
   return (
-    <AuthContext.Provider value={value}>
-      {!loading && children}
+    <AuthContext.Provider value={{ user, signIn, signOut }}>
+      {children}
     </AuthContext.Provider>
   );
 };

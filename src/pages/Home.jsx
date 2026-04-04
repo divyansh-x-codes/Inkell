@@ -3,8 +3,6 @@ import { useNavigate } from 'react-router-dom';
 import BottomNav from '../components/BottomNav';
 import ArticleCard from '../components/ArticleCard';
 import { articles as mockArticles } from '../data';
-import { useAuth } from '../context/AuthContext';
-import { fetchArticles, seedMockArticles } from '../utils/supabaseData';
 import { getTotalUnread } from '../utils/unread';
 
 const getInitials = (name) => {
@@ -15,22 +13,8 @@ const getInitials = (name) => {
 
 export default function Home({ showToast }) {
   const navigate = useNavigate();
-  const { user } = useAuth();
-  const [articles, setArticles] = useState([]);
+  const [articles] = useState(mockArticles);
   const [unread, setUnread] = useState(getTotalUnread);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    async function init() {
-      // Seed if empty (just a convenience for the user)
-      if (user) await seedMockArticles(mockArticles);
-      
-      const data = await fetchArticles();
-      setArticles(data.length > 0 ? data : mockArticles);
-      setLoading(false);
-    }
-    init();
-  }, [user]);
 
   useEffect(() => {
     const refresh = () => setUnread(getTotalUnread());
@@ -42,11 +26,9 @@ export default function Home({ showToast }) {
     };
   }, []);
 
-  const profile = {
-    name: user?.user_metadata?.full_name || 'User',
-    avatar: user?.user_metadata?.avatar_url || null,
-    color: '#1a9e6e'
-  };
+  // Read saved user name from localStorage
+  const savedName = localStorage.getItem('inkwell_user_name') || 'User';
+  const initials = getInitials(savedName);
 
   return (
     <div id="v-home" className="view active">
@@ -74,18 +56,14 @@ export default function Home({ showToast }) {
               onClick={() => navigate('/my-profile')}
               style={{
                 width: 36, height: 36, borderRadius: '50%', cursor: 'pointer',
-                overflow: 'hidden', flexShrink: 0,
-                background: profile.avatar ? 'transparent' : profile.color,
+                background: '#1a9e6e',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 fontWeight: 800, fontSize: '0.85rem', color: 'white',
                 fontFamily: "'DM Sans', sans-serif",
                 border: '2px solid #2a2a2a',
               }}
             >
-              {profile.avatar
-                ? <img src={profile.avatar} alt="avatar" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                : getInitials(profile.name)
-              }
+              {initials}
             </div>
           </div>
         </div>
@@ -99,15 +77,9 @@ export default function Home({ showToast }) {
           </div>
 
           <div style={{ padding: '0 16px' }}>
-            {loading ? (
-              <div style={{ padding: '20px', textAlign: 'center', color: '#888' }}>
-                <p>Loading your feed...</p>
-              </div>
-            ) : (
-              articles.map((article) => (
-                <ArticleCard key={article.id} article={article} showToast={showToast} />
-              ))
-            )}
+            {articles.map((article) => (
+              <ArticleCard key={article.id} article={article} showToast={showToast} />
+            ))}
           </div>
         </div>
 

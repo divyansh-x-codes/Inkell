@@ -1,9 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { articles as mockArticles } from '../data';
-import { useAuth } from '../context/AuthContext';
-import { fetchComments, postComment } from '../utils/supabaseData';
-import { supabase } from '../supabaseClient';
 
 const getInitials = (name) => {
   if (!name) return 'U';
@@ -14,49 +11,42 @@ const getInitials = (name) => {
 const avatarColors = ['#cc4400','#2b9348','#7046a0','#1a6fa8','#c0392b','#16a085'];
 const colorForName = (name) => avatarColors[(name||'A').charCodeAt(0) % avatarColors.length];
 
+// Local comments stored in memory during session
+const localComments = {};
+
 export default function Comments({ showToast }) {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { user } = useAuth();
   const [article, setArticle] = useState(null);
   const [newComment, setNewComment] = useState('');
   const [comments, setComments] = useState([]);
   const [likedComments, setLikedComments] = useState({});
-  const [loading, setLoading] = useState(true);
+
+  const savedName = localStorage.getItem('inkwell_user_name') || 'User';
 
   useEffect(() => {
-    async function init() {
-      // Fetch article info (fallback to mock if not found in DB yet)
-      const { data: artData } = await supabase.from('articles').select('*').eq('id', id).single();
-      setArticle(artData || mockArticles.find(a => a.id === parseInt(id)));
-
-      // Fetch comments from Supabase
-      const comms = await fetchComments(id);
-      setComments(comms);
-      setLoading(false);
-    }
-    init();
+    const art = mockArticles.find(a => String(a.id) === String(id));
+    setArticle(art);
+    setComments(localComments[id] || []);
   }, [id]);
 
-  const handleSubmit = async (e) => {
+  const handleSubmit = (e) => {
     e.preventDefault();
-    if (!newComment.trim() || !user) {
-      if (!user) showToast('Please log in to comment');
-      return;
-    }
+    if (!newComment.trim()) return;
 
-    const userName = user.user_metadata?.full_name || user.email;
-    const content = newComment.trim();
+    const comment = {
+      id: Date.now(),
+      user_name: savedName,
+      content: newComment.trim(),
+      created_at: new Date().toISOString(),
+      likes: 0,
+    };
 
-    const { data, error } = await postComment(id, user.id, userName, content);
-
-    if (error) {
-      showToast(error.message);
-    } else {
-      setComments(prev => [...prev, ...data]);
-      setNewComment('');
-      showToast('Comment posted!');
-    }
+    const updated = [...(localComments[id] || []), comment];
+    localComments[id] = updated;
+    setComments(updated);
+    setNewComment('');
+    showToast('Comment posted!');
   };
 
   const toggleLike = (commentId) => {
@@ -68,7 +58,6 @@ export default function Comments({ showToast }) {
     ));
   };
 
-  if (loading) return <div style={{padding:'20px',color:'white'}}>Loading comments...</div>;
   if (!article) return <div style={{padding:'20px',color:'white'}}>Article not found</div>;
 
   return (
@@ -88,14 +77,14 @@ export default function Comments({ showToast }) {
           <div className="note-author-row">
             <div
               className="author-letter-avatar"
-              style={{width:40,height:40,background:colorForName(article.author_name || article.name),cursor:'pointer'}}
-              onClick={() => navigate(`/profile/${encodeURIComponent(article.author_name || article.name)}`)}
+              style={{width:40,height:40,background:colorForName(article.name),cursor:'pointer'}}
+              onClick={() => navigate(`/profile/${encodeURIComponent(article.name)}`)}
             >
-              {getInitials(article.author_name || article.name)}
+              {getInitials(article.name)}
             </div>
-            <div className="note-author-info" style={{cursor:'pointer'}} onClick={() => navigate(`/profile/${encodeURIComponent(article.author_name || article.name)}`)}>
-              <div className="note-author-name">{article.author_name || article.name}</div>
-              <div className="note-meta">{article.pub_date || article.date}</div>
+            <div className="note-author-info" style={{cursor:'pointer'}} onClick={() => navigate(`/profile/${encodeURIComponent(article.name)}`)}>
+              <div className="note-author-name">{article.name}</div>
+              <div className="note-meta">{article.date}</div>
             </div>
           </div>
           <div style={{fontSize:'1.05rem',marginTop:'12px',color:'var(--white)',lineHeight:1.4}}>
@@ -116,30 +105,30 @@ export default function Comments({ showToast }) {
               <div
                 style={{
                   width:40, height:40, borderRadius:'50%', flexShrink:0,
-                  background: colorForName(c.user_name || c.user),
+                  background: colorForName(c.user_name),
                   display:'flex', alignItems:'center', justifyContent:'center',
                   fontWeight:700, fontSize:'0.85rem', color:'white', cursor:'pointer'
                 }}
-                onClick={() => navigate(`/profile/${encodeURIComponent(c.user_name || c.user)}`)}
+                onClick={() => navigate(`/profile/${encodeURIComponent(c.user_name)}`)}
               >
-                {getInitials(c.user_name || c.user)}
+                {getInitials(c.user_name)}
               </div>
               <div className="thread-content">
                 <div className="thread-author-row">
                   <div
                     className="thread-author-name"
                     style={{cursor:'pointer'}}
-                    onClick={() => navigate(`/profile/${encodeURIComponent(c.user_name || c.user)}`)}
+                    onClick={() => navigate(`/profile/${encodeURIComponent(c.user_name)}`)}
                   >
-                    {c.user_name || c.user}
+                    {c.user_name}
                   </div>
                   <div className="thread-meta">
                     <span style={{color:'var(--gray)',fontSize:'0.8rem',marginLeft:'8px'}}>
-                      {new Date(c.created_at).toLocaleDateString() || c.time}
+                      {new Date(c.created_at).toLocaleDateString()}
                     </span>
                   </div>
                 </div>
-                <div className="thread-text">{c.content || c.text}</div>
+                <div className="thread-text">{c.content}</div>
                 <div className="thread-actions">
                   <button
                     className="thread-action-btn"
@@ -161,33 +150,28 @@ export default function Comments({ showToast }) {
       <div className="reply-bottom-bar">
         <div style={{
           width:36, height:36, borderRadius:'50%', flexShrink:0,
-          background: user?.user_metadata?.avatar_url ? 'transparent' : '#1a9e6e',
+          background:'#1a9e6e',
           display:'flex', alignItems:'center',
           justifyContent:'center', color:'white', fontWeight:700, fontSize:'0.8rem',
-          overflow: 'hidden'
         }}>
-          {user?.user_metadata?.avatar_url 
-            ? <img src={user.user_metadata.avatar_url} style={{width:'100%', height:'100%', objectFit:'cover'}} />
-            : getInitials(user?.user_metadata?.full_name || user?.email || 'Y')
-          }
+          {getInitials(savedName)}
         </div>
         <form className="reply-form" onSubmit={handleSubmit}>
           <input
             type="text"
             className="reply-input"
-            placeholder={user ? "Leave a reply..." : "Log in to reply..."}
+            placeholder="Leave a reply..."
             value={newComment}
             onChange={e => setNewComment(e.target.value)}
-            disabled={!user}
           />
           <div className="reply-input-icons">
             <button
               type="submit"
-              disabled={!newComment.trim() || !user}
+              disabled={!newComment.trim()}
               style={{
                 background:'none', border:'none',
-                color: newComment.trim() && user ? 'var(--orange)' : 'var(--gray)',
-                fontSize:'0.9rem', fontWeight:600, cursor: user ? 'pointer' : 'default', marginRight:'8px'
+                color: newComment.trim() ? 'var(--orange)' : 'var(--gray)',
+                fontSize:'0.9rem', fontWeight:600, cursor:'pointer', marginRight:'8px'
               }}
             >
               Post
