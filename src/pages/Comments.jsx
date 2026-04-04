@@ -100,9 +100,14 @@ export default function Comments({ showToast }) {
   };
 
   const handleDelete = async (commentId) => {
+    // Optimistic UI — remove comment instantly from local state
+    setComments(prev => prev.filter(c => c.id !== commentId));
+
     const result = await deleteComment(commentId, id);
     if (result.error) {
-      showToast('Failed to delete comment');
+      console.error('Delete failed:', result.error);
+      showToast('Failed to delete: ' + (result.error.message || 'Unknown error'));
+      // The real-time listener will re-add it automatically if delete failed
     } else {
       showToast('Comment deleted');
     }
