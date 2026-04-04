@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { useNavigate, useLocation, useParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { subscribeToMessages, sendMessage, getConversationId } from '../utils/firebaseData';
+import { subscribeToMessages, sendMessage, getUserProfile } from '../utils/firebaseData';
 
 export default function ChatThread({ showToast }) {
   const navigate = useNavigate();
@@ -9,19 +9,37 @@ export default function ChatThread({ showToast }) {
   const { user } = useAuth();
   const { id } = useParams(); // This is the conversationId
 
-  // Recipient info passed via state or fallback
-  const recipient = location.state?.recipientUserId ? {
+  const [recipient, setRecipient] = useState(location.state?.recipientUserId ? {
     id: location.state.recipientUserId,
     name: location.state.recipientName || 'User',
     avatar: location.state.recipientAvatar || null,
-  } : null;
+  } : null);
 
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const bottomRef = useRef(null);
   const [loading, setLoading] = useState(true);
 
-  // Real-time subscription
+  // 1. Resolve recipient if missing (e.g. on refresh)
+  useEffect(() => {
+    if (!recipient && id && user) {
+      const parts = id.split('_');
+      const otherUid = parts.find(p => p !== user.uid);
+      if (otherUid) {
+        getUserProfile(otherUid).then(prof => {
+          if (prof) {
+            setRecipient({
+              id: prof.uid || prof.id,
+              name: prof.name,
+              avatar: prof.avatar
+            });
+          }
+        });
+      }
+    }
+  }, [id, user, recipient]);
+
+  // 2. Real-time subscription
   useEffect(() => {
     if (!id) return;
     const unsubscribe = subscribeToMessages(id, (data) => {
@@ -31,7 +49,7 @@ export default function ChatThread({ showToast }) {
     return () => unsubscribe();
   }, [id]);
 
-  // Auto scroll to bottom
+  // 3. Auto scroll to bottom
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
@@ -70,7 +88,7 @@ export default function ChatThread({ showToast }) {
           </svg>
         </button>
 
-        <div className="chat-header-info" onClick={() => navigate(`/profile/${encodeURIComponent(displayName)}`)}>
+        <div className="chat-header-info" onClick={() => navigate(`/profile/${encodeURIComponent(displayName)}`, { state: { authorId: recipient.id } })}>
           {recipient?.avatar
             ? <img src={recipient.avatar} alt={displayName} className="chat-header-avatar-img" />
             : <div className="chat-header-avatar-letter" style={{ background: colorForName(displayName) }}>{getInitials(displayName)}</div>
@@ -81,7 +99,7 @@ export default function ChatThread({ showToast }) {
           </div>
         </div>
 
-        <button className="tb-circle-btn" onClick={() => showToast('Chat options')} title="Options">
+        <button className="tb-circle-btn" onClick={() => showToast('Options')} title="Options">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <circle cx="12" cy="12" r="1"></circle>
             <circle cx="12" cy="5" r="1"></circle>

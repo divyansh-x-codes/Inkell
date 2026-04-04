@@ -1,11 +1,12 @@
 import { createContext, useContext, useState, useEffect } from 'react';
-import { auth } from '../firebase';
+import { auth, db } from '../firebase';
 import {
   GoogleAuthProvider,
   signInWithPopup,
   onAuthStateChanged,
   signOut as firebaseSignOut,
 } from 'firebase/auth';
+import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
 
 const AuthContext = createContext();
 
@@ -15,21 +16,34 @@ export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
 
+  // Sync user info to Firestore "users" collection
+  const syncUserToFirestore = async (firebaseUser) => {
+    if (!firebaseUser) return;
+    const userRef = doc(db, 'users', firebaseUser.uid);
+    await setDoc(userRef, {
+      uid: firebaseUser.uid,
+      name: firebaseUser.displayName || 'Anonymous',
+      email: firebaseUser.email,
+      avatar: firebaseUser.photoURL,
+      lastLogin: serverTimestamp(),
+    }, { merge: true });
+  };
+
   // Listen to Firebase auth state
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
-        setUser({
+        const u = {
           uid: firebaseUser.uid,
           name: firebaseUser.displayName || firebaseUser.email?.split('@')[0] || 'User',
           email: firebaseUser.email,
           avatar: firebaseUser.photoURL,
-        });
-        localStorage.setItem('inkwell_user_name', firebaseUser.displayName || firebaseUser.email?.split('@')[0] || 'User');
+        };
+        setUser(u);
+        // Sync profile data in the background
+        syncUserToFirestore(firebaseUser);
       } else {
-        // Fall back to localStorage user (for non-Google login)
-        const saved = localStorage.getItem('inkwell_user');
-        setUser(saved ? JSON.parse(saved) : null);
+        setUser(null);
       }
       setLoading(false);
     });
@@ -47,22 +61,20 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  // Manual login (localStorage only)
+  // Skip manual signIn (legacy local storage auth removed for consistency)
   const signIn = (name, email) => {
-    const u = { name, email };
-    localStorage.setItem('inkwell_user', JSON.stringify(u));
-    localStorage.setItem('inkwell_user_name', name);
-    setUser(u);
+    // This is now deprecated in favor of Firebase Auth
+    console.warn("Manual sign-in is deprecated. Use loginWithGoogle.");
   };
 
-  // Sign out (both Firebase + local)
+  // Sign out
   const signOut = async () => {
     try {
       await firebaseSignOut(auth);
-    } catch {}
-    localStorage.removeItem('inkwell_user');
-    localStorage.removeItem('inkwell_user_name');
-    setUser(null);
+      setUser(null);
+    } catch (error) {
+      console.error("Sign out error", error);
+    }
   };
 
   return (

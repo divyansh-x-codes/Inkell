@@ -26,6 +26,7 @@ const LIKES_COL = "likes";
 const SAVES_COL = "saves";
 const CONVOS_COL = "conversations";
 const MESSAGES_COL = "messages";
+const USERS_COL = "users";
 
 // ─── Real-time feed (onSnapshot) ─────────────────────────────────────────────
 export const subscribeToBlogs = (setBlogs) => {
@@ -42,6 +43,28 @@ export const subscribeToBlogs = (setBlogs) => {
     setBlogs(mockArticles);
   });
   return unsubscribe;
+};
+
+// ─── One-time fetches ─────────────────────────────────────────────────────────
+
+// Fetch user profile by UID
+export const getUserProfile = async (uid) => {
+  if (!uid) return null;
+  const snap = await getDoc(doc(db, USERS_COL, uid));
+  if (snap.exists()) return { uid: snap.id, ...snap.data() };
+  return null;
+};
+
+// Fetch real articles by particular author
+export const getArticlesByAuthor = async (authorId) => {
+  try {
+    const q = query(collection(db, BLOGS_COL), where("authorId", "==", authorId), orderBy("createdAt", "desc"));
+    const snapshot = await getDocs(q);
+    return snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+  } catch (err) {
+    console.error("Fetch by author failed", err);
+    return [];
+  }
 };
 
 // ─── Publish a blog ───────────────────────────────────────────────────────────
@@ -264,12 +287,14 @@ export const subscribeToConversations = (userId, setConvos) => {
   });
 };
 
-// ─── One-time fetch (fallback) ────────────────────────────────────────────────
+// ─── One-time fetch (fallback for Search) ─────────────────────────────────────
 export const fetchArticles = async () => {
   try {
     const q = query(collection(db, BLOGS_COL), orderBy("createdAt", "desc"));
     const snapshot = await getDocs(q);
     if (snapshot.empty) return mockArticles;
     return snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
-  } catch (err) { return mockArticles; }
+  } catch (err) {
+    return mockArticles;
+  }
 };
