@@ -163,10 +163,11 @@ export const subscribeToFollowedBlogs = (userId, setBlogs) => {
       setBlogs([]);
       return;
     }
+    // Firestore 'in' supports up to 30 items
     const q = query(
-    collection(db, BLOGS_COL),
-    where("category", "==", category)
-  );
+      collection(db, BLOGS_COL),
+      where("authorId", "in", following.slice(0, 30))
+    );
     onSnapshot(q, (snapshot) => {
       setBlogs(snapshot.docs.map((d) => ({ id: d.id, ...d.data() })));
     });
@@ -227,7 +228,7 @@ export const subscribeToUserProfile = (uid, setProfile) => {
 export const subscribeToUserArticles = (userId, setArticles) => {
   const q = query(
     collection(db, BLOGS_COL),
-    where("userId", "==", userId)
+    where("authorId", "==", userId)
   );
   return onSnapshot(q, (snapshot) => {
     setArticles(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
@@ -430,3 +431,25 @@ export const fetchArticles = async () => {
     return mockArticles;
   }
 };
+
+// ─── Real-time single blog doc (for Reader/Comments count sync) ────────────────
+export const subscribeToBlogDoc = (blogId, setData) => {
+  return onSnapshot(doc(db, BLOGS_COL, blogId), (snap) => {
+    if (snap.exists()) setData({ id: snap.id, ...snap.data() });
+  });
+};
+
+// ─── Fix stale commentsCount by counting real comments ────────────────────────
+export const recalculateCommentsCount = async (blogId) => {
+  try {
+    const q = query(collection(db, COMMENTS_COL), where("blogId", "==", blogId));
+    const snap = await getDocs(q);
+    const realCount = snap.size;
+    await updateDoc(doc(db, BLOGS_COL, blogId), { commentsCount: realCount });
+    return realCount;
+  } catch (err) {
+    console.error("Recalculate failed:", err);
+    return null;
+  }
+};
+

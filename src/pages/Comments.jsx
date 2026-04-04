@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { subscribeToComments, addComment, fetchArticles } from '../utils/firebaseData';
+import { subscribeToComments, addComment, deleteComment, getBlog, recalculateCommentsCount } from '../utils/firebaseData';
 
 const getInitials = (name) => {
   if (!name) return 'U';
@@ -21,16 +21,11 @@ export default function Comments({ showToast }) {
   const [comments, setComments] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  // Load article details
+  // Load article details directly from Firestore
   useEffect(() => {
-    fetchArticles().then(articles => {
-      const art = articles.find(a => String(a.id) === String(id));
-      if (art) {
-        setArticle(art);
-      } else {
-        // Final fallback if fetchArticles didn't have it (unlikely)
-        setArticle(null);
-      }
+    if (!id) return;
+    getBlog(id).then(data => {
+      if (data) setArticle(data);
     }).catch(err => {
       console.error("Failed to load article context for comments:", err);
     });
@@ -40,20 +35,25 @@ export default function Comments({ showToast }) {
   useEffect(() => {
     if (!id) return;
     setLoading(true);
+    let healed = false;
     const unsubscribe = subscribeToComments(id, (data) => {
-      // Sort locally to avoid needing a Firestore composite index
+      // Sort locally (newest first) to avoid needing a Firestore composite index
       const sorted = [...(data || [])].sort((a, b) => {
         const timeA = a.createdAt?.toMillis ? a.createdAt.toMillis() : (a.timestamp || 0);
         const timeB = b.createdAt?.toMillis ? b.createdAt.toMillis() : (b.timestamp || 0);
-        return timeB - timeA; // Newest first
+        return timeB - timeA;
       });
       setComments(sorted);
       setLoading(false);
+
+      // Self-heal: recalculate stale commentsCount on first load
+      if (!healed) {
+        healed = true;
+        recalculateCommentsCount(id);
+      }
     });
     
-    // Safety timeout: if no data for 3 seconds, stop loading
     const timer = setTimeout(() => setLoading(false), 3000);
-
     return () => {
       unsubscribe();
       clearTimeout(timer);
