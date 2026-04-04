@@ -1,42 +1,34 @@
 import { useState, useRef, useEffect } from 'react';
 import { useNavigate, useLocation, useParams } from 'react-router-dom';
-import { addUnread, clearUnread } from '../utils/unread';
-
-const seedThreads = {
-  '1': [
-    { id: 1, from: 'them', text: 'Hey! Love the article on ChatGPT 🔥', time: '10:12 AM' },
-    { id: 2, from: 'me', text: 'Thank you so much! Really glad it resonated.', time: '10:14 AM' },
-    { id: 3, from: 'them', text: 'The part about dependency vs efficiency was eye-opening honestly', time: '10:15 AM' },
-    { id: 4, from: 'me', text: 'Yeah that was the core insight for me too. Took me a while to realise I was just avoiding discomfort 😅', time: '10:17 AM' },
-  ],
-  '2': [
-    { id: 1, from: 'them', text: 'Your design piece was incredibly refreshing.', time: '9:00 AM' },
-    { id: 2, from: 'me', text: 'Thanks, I put a lot of thought into that one!', time: '9:05 AM' },
-  ],
-  '3': [
-    { id: 1, from: 'them', text: 'The startup culture article was spot on 👌', time: '8:30 AM' },
-  ],
-};
+import { useAuth } from '../context/AuthContext';
+import { subscribeToMessages, sendMessage, getConversationId } from '../utils/firebaseData';
 
 export default function ChatThread({ showToast }) {
   const navigate = useNavigate();
   const location = useLocation();
-  const { id } = useParams();
+  const { user } = useAuth();
+  const { id } = useParams(); // This is the conversationId
 
-  const creator = location.state?.creator || {
-    name: 'Creator',
-    initials: 'C',
-    color: '#e85d04',
-    avatar: null,
-  };
+  // Recipient info passed via state or fallback
+  const recipient = location.state?.recipientUserId ? {
+    id: location.state.recipientUserId,
+    name: location.state.recipientName || 'User',
+    avatar: location.state.recipientAvatar || null,
+  } : null;
 
-  const [messages, setMessages] = useState(seedThreads[id] || []);
+  const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const bottomRef = useRef(null);
+  const [loading, setLoading] = useState(true);
 
-  // Clear unread on entry
+  // Real-time subscription
   useEffect(() => {
-    clearUnread(id);
+    if (!id) return;
+    const unsubscribe = subscribeToMessages(id, (data) => {
+      setMessages(data);
+      setLoading(false);
+    });
+    return () => unsubscribe();
   }, [id]);
 
   // Auto scroll to bottom
@@ -44,31 +36,30 @@ export default function ChatThread({ showToast }) {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  const sendMessage = () => {
+  const handleSend = async () => {
     const text = input.trim();
-    if (!text) return;
+    if (!text || !user || !recipient) return;
 
-    const newMsg = {
-      id: Date.now(),
-      from: 'me',
-      text,
-      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-    };
-    setMessages(prev => [...prev, newMsg]);
     setInput('');
-
-    // Simulate reply after a delay
-    setTimeout(() => {
-      const reply = {
-        id: Date.now() + 1,
-        from: 'them',
-        text: '👍 Got it!',
-        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      };
-      setMessages(prev => [...prev, reply]);
-      addUnread(id);
-    }, 1500);
+    const result = await sendMessage(id, user, text, recipient);
+    if (result.error) {
+      showToast('Failed to send message');
+    }
   };
+
+  const getInitials = (name) => {
+    if (!name) return 'U';
+    const s = name.trim().split(' ');
+    return s.length > 1 ? (s[0][0] + s[1][0]).toUpperCase() : name[0].toUpperCase();
+  };
+
+  const avatarColors = ['#cc4400','#2b9348','#7046a0','#1a6fa8','#c0392b','#16a085'];
+  const colorForName = (name) => avatarColors[(name||'A').charCodeAt(0) % avatarColors.length];
+
+  if (!user) return <div style={{padding: 40, textAlign: 'center', color: 'white'}}>Login to chat</div>;
+  if (!recipient && loading) return <div style={{padding: 40, textAlign: 'center', color: 'white'}}>Loading chat...</div>;
+
+  const displayName = recipient?.name || 'Chat';
 
   return (
     <div className="chat-page app-shell">
@@ -79,18 +70,18 @@ export default function ChatThread({ showToast }) {
           </svg>
         </button>
 
-        <div className="chat-header-info" onClick={() => navigate(`/profile/${encodeURIComponent(creator.name)}`, { state: { creator } })}>
-          {creator.avatar
-            ? <img src={creator.avatar} alt={creator.name} className="chat-header-avatar-img" />
-            : <div className="chat-header-avatar-letter" style={{ background: creator.color }}>{creator.initials}</div>
+        <div className="chat-header-info" onClick={() => navigate(`/profile/${encodeURIComponent(displayName)}`)}>
+          {recipient?.avatar
+            ? <img src={recipient.avatar} alt={displayName} className="chat-header-avatar-img" />
+            : <div className="chat-header-avatar-letter" style={{ background: colorForName(displayName) }}>{getInitials(displayName)}</div>
           }
           <div>
-            <div className="chat-header-name">{creator.name}</div>
-            <div className="chat-header-sub">Tap to view profile</div>
+            <div className="chat-header-name">{displayName}</div>
+            <div className="chat-header-sub">Online now</div>
           </div>
         </div>
 
-        <button className="tb-circle-btn" onClick={() => showToast('Options')} title="Options">
+        <button className="tb-circle-btn" onClick={() => showToast('Chat options')} title="Options">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <circle cx="12" cy="12" r="1"></circle>
             <circle cx="12" cy="5" r="1"></circle>
@@ -100,18 +91,25 @@ export default function ChatThread({ showToast }) {
       </div>
 
       <div className="chat-messages-area">
+        {messages.length === 0 && !loading && (
+          <div style={{ textAlign: 'center', padding: '40px 20px', color: '#444', fontSize: '0.9rem' }}>
+            No messages yet. Say hello! 👋
+          </div>
+        )}
         {messages.map(msg => (
-          <div key={msg.id} className={`chat-bubble-row ${msg.from === 'me' ? 'mine' : 'theirs'}`}>
-            {msg.from === 'them' && (
-              creator.avatar
-                ? <img src={creator.avatar} alt="" className="chat-bubble-avatar" />
-                : <div className="chat-bubble-avatar-letter" style={{ background: creator.color }}>{(creator.initials || 'C')[0]}</div>
+          <div key={msg.id} className={`chat-bubble-row ${msg.senderId === user.uid ? 'mine' : 'theirs'}`}>
+            {msg.senderId !== user.uid && (
+              recipient?.avatar
+                ? <img src={recipient.avatar} alt="" className="chat-bubble-avatar" />
+                : <div className="chat-bubble-avatar-letter" style={{ background: colorForName(displayName) }}>{getInitials(displayName)[0]}</div>
             )}
             <div className="chat-bubble-group">
-              <div className={`chat-bubble ${msg.from === 'me' ? 'bubble-mine' : 'bubble-theirs'}`}>
+              <div className={`chat-bubble ${msg.senderId === user.uid ? 'bubble-mine' : 'bubble-theirs'}`}>
                 {msg.text}
               </div>
-              <div className="chat-bubble-time">{msg.time}</div>
+              <div className="chat-bubble-time">
+                {msg.createdAt?.toDate ? new Date(msg.createdAt.toDate()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '...'}
+              </div>
             </div>
           </div>
         ))}
@@ -122,12 +120,12 @@ export default function ChatThread({ showToast }) {
       <div className="chat-input-bar">
         <input
           className="chat-text-input"
-          placeholder={`Message ${(creator.name || 'Creator').split(' ')[0]}…`}
+          placeholder={`Message ${displayName.split(' ')[0]}…`}
           value={input}
           onChange={e => setInput(e.target.value)}
-          onKeyDown={e => e.key === 'Enter' && sendMessage()}
+          onKeyDown={e => e.key === 'Enter' && handleSend()}
         />
-        <button className="chat-send-btn" onClick={sendMessage} disabled={!input.trim()}>
+        <button className="chat-send-btn" onClick={handleSend} disabled={!input.trim()}>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
             <line x1="22" y1="2" x2="11" y2="13"></line>
             <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>

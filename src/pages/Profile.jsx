@@ -1,9 +1,10 @@
-import { useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import BottomNav from '../components/BottomNav';
 import ArticleCard from '../components/ArticleCard';
 import { articles } from '../data';
 import SubscribeModal from '../components/SubscribeModal';
+import { useAuth } from '../context/AuthContext';
+import { getConversationId } from '../utils/firebaseData';
 
 // Per-creator data keyed by username slug
 const CREATOR_DB = {
@@ -63,7 +64,9 @@ const getInitials = (name) => {
 
 export default function Profile({ showToast }) {
   const navigate = useNavigate();
+  const location = useLocation();
   const { username } = useParams();
+  const { user } = useAuth();
 
   const [activeTab, setActiveTab] = useState('Activity');
   const [subscribed, setSubscribed] = useState(false);
@@ -103,7 +106,30 @@ export default function Profile({ showToast }) {
     showToast(followed ? 'Unfollowed' : `Following ${creator.name}`);
   };
 
-  const openChat = () => navigate('/chat/1', { state: { creator: creatorChatState } });
+  const openChat = () => {
+    if (!user) {
+      showToast('Login to message authors');
+      navigate('/login');
+      return;
+    }
+    const targetUserId = location.state?.authorId;
+    if (!targetUserId) {
+      showToast('Unable to start chat with this creator');
+      return;
+    }
+    if (targetUserId === user.uid) {
+      showToast("Cannot chat with yourself!");
+      return;
+    }
+    const convoId = getConversationId(user.uid, targetUserId);
+    navigate(`/chat/${convoId}`, { 
+      state: { 
+        recipientUserId: targetUserId,
+        recipientName: creator.name,
+        recipientAvatar: creator.avatar
+      } 
+    });
+  };
 
   const TABS = ['Activity', 'Posts', 'Chat', 'Likes', 'Reads (30)'];
 

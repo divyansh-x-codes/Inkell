@@ -1,67 +1,55 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import BottomNav from '../components/BottomNav';
-import { getUnreadForThread } from '../utils/unread';
+import { useAuth } from '../context/AuthContext';
+import { subscribeToConversations } from '../utils/firebaseData';
 
-const mockConversations = [
-  // ... (keeping the same data but will dynamically check unread)
-  {
-    id: 1,
-    name: 'Divyansh Codespace',
-    handle: '@divyansh',
-    avatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?q=80&w=80&auto=format&fit=crop',
-    lastMsg: 'Hey! Love the article on ChatGPT 🔥',
-    time: '2m',
-    initials: 'DC',
-    color: '#cc4400',
-  },
-  {
-    id: 2,
-    name: 'Youssef Hosni',
-    handle: '@youssefhosni95',
-    avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?q=80&w=80&auto=format&fit=crop',
-    lastMsg: 'Thanks for subscribing! Any questions?',
-    time: '1h',
-    initials: 'YH',
-    color: '#2b9348',
-  },
-  {
-    id: 3,
-    name: 'Sarah Chen',
-    handle: '@sarahwrites',
-    avatar: null,
-    lastMsg: 'The new piece on design systems is live!',
-    time: '3h',
-    initials: 'SC',
-    color: '#7046a0',
-  },
-  {
-    id: 4,
-    name: 'Julian Cole',
-    handle: '@juliancole',
-    avatar: null,
-    lastMsg: 'Loved your comment on the article.',
-    time: '1d',
-    initials: 'JC',
-    color: '#1a6fa8',
-  },
-];
+const getInitials = (name) => {
+  if (!name) return 'U';
+  const s = name.trim().split(' ');
+  return s.length > 1 ? (s[0][0] + s[1][0]).toUpperCase() : name[0].toUpperCase();
+};
+
+const avatarColors = ['#cc4400','#2b9348','#7046a0','#1a6fa8','#c0392b','#16a085'];
+const colorForName = (name) => avatarColors[(name||'A').charCodeAt(0) % avatarColors.length];
 
 export default function Conversations({ showToast }) {
   const navigate = useNavigate();
-  const [refresh, setRefresh] = useState(0);
+  const { user } = useAuth();
+  const [conversations, setConversations] = useState([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const handleUpdate = () => setRefresh(prev => prev + 1);
-    window.addEventListener('inkwell_unread_changed', handleUpdate);
-    return () => window.removeEventListener('inkwell_unread_changed', handleUpdate);
-  }, []);
+    if (!user?.uid) {
+      setLoading(false);
+      return;
+    }
+    const unsubscribe = subscribeToConversations(user.uid, (data) => {
+      setConversations(data);
+      setLoading(false);
+    });
+    return () => unsubscribe();
+  }, [user]);
+
+  const getTimeAgo = (timestamp) => {
+    if (!timestamp) return '...';
+    try {
+      const date = timestamp.toDate();
+      const diff = Date.now() - date.getTime();
+      const mins = Math.floor(diff / 60000);
+      if (mins < 1) return 'now';
+      if (mins < 60) return `${mins}m`;
+      const hrs = Math.floor(mins / 60);
+      if (hrs < 24) return `${hrs}h`;
+      return `${Math.floor(hrs / 24)}d`;
+    } catch { return '...'; }
+  };
 
   return (
     <div className="conv-page app-shell">
       <div className="conv-header">
         <h1 className="conv-title">Messages</h1>
-        <button className="tb-circle-btn" onClick={() => showToast('New message')}>
+        <button className="tb-circle-btn" onClick={() => showToast('Messaging active')}>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <path d="M12 20h9"></path>
             <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path>
@@ -78,28 +66,59 @@ export default function Conversations({ showToast }) {
       </div>
 
       <div className="conv-list">
-        {mockConversations.map(conv => (
-          <div
-            key={conv.id}
-            className="conv-item"
-            onClick={() => navigate(`/chat/${conv.id}`, { state: { creator: conv } })}
-          >
-            <div className="conv-avatar-wrap">
-              {conv.avatar
-                ? <img src={conv.avatar} alt={conv.name} className="conv-avatar-img" />
-                : <div className="conv-avatar-letter" style={{ background: conv.color }}>{conv.initials}</div>
-              }
-              {getUnreadForThread(conv.id) > 0 && <span className="conv-unread-dot">{getUnreadForThread(conv.id)}</span>}
-            </div>
-            <div className="conv-content">
-              <div className="conv-top-row">
-                <span className="conv-name">{conv.name}</span>
-                <span className="conv-time">{conv.time}</span>
-              </div>
-              <p className={`conv-preview ${getUnreadForThread(conv.id) > 0 ? 'unread' : ''}`}>{conv.lastMsg}</p>
-            </div>
+        {!user ? (
+          <div style={{ padding: '80px 20px', textAlign: 'center', color: '#555' }}>
+            <div style={{ fontSize: '2rem', marginBottom: 16 }}>🔒</div>
+            <div style={{ fontWeight: 600, color: 'white', marginBottom: 8 }}>Please Login</div>
+            <p style={{ fontSize: '0.85rem' }}>Login to see your real-time private messages.</p>
+            <button className="saved-browse-btn" style={{ marginTop: 20 }} onClick={() => navigate('/login')}>Log in</button>
           </div>
-        ))}
+        ) : loading ? (
+          <div style={{ textAlign: 'center', padding: '60px', color: '#555' }}>🔄 Loading chats...</div>
+        ) : conversations.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: '80px 20px', color: '#555' }}>
+             <div style={{ fontSize: '2rem', marginBottom: 16 }}>💬</div>
+             <div style={{ fontWeight: 600, color: 'white', marginBottom: 8 }}>No messages yet</div>
+             <p style={{ fontSize: '0.85rem' }}>Send a message to an author from their profile to start a chat.</p>
+          </div>
+        ) : (
+          conversations.map(conv => {
+            // Find the other participant's info
+            const otherId = conv.participants.find(id => id !== user.uid);
+            const otherInfo = conv.participantInfo?.[otherId] || { name: 'User', avatar: null };
+            
+            return (
+              <div
+                key={conv.id}
+                className="conv-item"
+                onClick={() => navigate(`/chat/${conv.id}`, { 
+                  state: { 
+                    recipientUserId: otherId,
+                    recipientName: otherInfo.name,
+                    recipientAvatar: otherInfo.avatar
+                  } 
+                })}
+              >
+                <div className="conv-avatar-wrap">
+                  {otherInfo.avatar
+                    ? <img src={otherInfo.avatar} alt={otherInfo.name} className="conv-avatar-img" />
+                    : <div className="conv-avatar-letter" style={{ background: colorForName(otherInfo.name) }}>{getInitials(otherInfo.name)}</div>
+                  }
+                  {/* Unread badge logic could go here if implemented in Firestore */}
+                </div>
+                <div className="conv-content">
+                  <div className="conv-top-row">
+                    <span className="conv-name">{otherInfo.name}</span>
+                    <span className="conv-time">{getTimeAgo(conv.lastMessageTime)}</span>
+                  </div>
+                  <p className="conv-preview" style={{ color: conv.lastSenderId !== user.uid ? 'var(--white)' : 'var(--gray)' }}>
+                    {conv.lastSenderId === user.uid ? `You: ${conv.lastMessage}` : conv.lastMessage}
+                  </p>
+                </div>
+              </div>
+            );
+          })
+        )}
       </div>
 
       <BottomNav showToast={showToast} />

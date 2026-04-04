@@ -2,30 +2,27 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import BottomNav from '../components/BottomNav';
 import ArticleCard from '../components/ArticleCard';
-import { articles } from '../data';
-
-function getStore(key) {
-  try { return JSON.parse(localStorage.getItem(key) || '{}'); } catch { return {}; }
-}
-function setStore(key, data) {
-  try { localStorage.setItem(key, JSON.stringify(data)); } catch {}
-}
+import { useAuth } from '../context/AuthContext';
+import { subscribeToSavedBlogs } from '../utils/firebaseData';
 
 export default function Saved({ showToast }) {
   const navigate = useNavigate();
-
-  const getSavedArticles = () => {
-    const saves = getStore('inkwell_saves');
-    return articles.filter(a => saves[a.id]);
-  };
-
-  const [savedArticles, setSavedArticles] = useState(getSavedArticles);
+  const { user } = useAuth();
+  const [savedArticles, setSavedArticles] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [activeFilter, setActiveFilter] = useState('All');
 
-  // Refresh when focused
   useEffect(() => {
-    setSavedArticles(getSavedArticles());
-  }, []);
+    if (!user?.uid) {
+      setLoading(false);
+      return;
+    }
+    const unsubscribe = subscribeToSavedBlogs(user.uid, (data) => {
+      setSavedArticles(data);
+      setLoading(false);
+    });
+    return () => unsubscribe();
+  }, [user]);
 
   const filters = ['All', 'Technology', 'Design', 'Productivity', 'Politics'];
   const filtered = activeFilter === 'All'
@@ -34,23 +31,29 @@ export default function Saved({ showToast }) {
         (a.category || '').toLowerCase() === activeFilter.toLowerCase()
       );
 
-  const clearAll = () => {
-    setStore('inkwell_saves', {});
-    setSavedArticles([]);
-    showToast('Reading list cleared');
-  };
+  if (!user) {
+    return (
+      <div className="saved-page app-shell">
+        <div className="saved-header">
+          <h1 className="saved-title">Reading List</h1>
+        </div>
+        <div className="saved-empty">
+          <div className="saved-empty-icon">🔐</div>
+          <div className="saved-empty-title">Login required</div>
+          <p className="saved-empty-sub">Please login to access and sync your personal reading list.</p>
+          <button className="saved-browse-btn" onClick={() => navigate('/login')}>Log in</button>
+        </div>
+        <BottomNav showToast={showToast} />
+      </div>
+    );
+  }
 
   return (
     <div className="saved-page app-shell">
-      {/* Header */}
       <div className="saved-header">
         <h1 className="saved-title">Reading List</h1>
-        {savedArticles.length > 0 && (
-          <button className="saved-clear-btn" onClick={clearAll}>Clear all</button>
-        )}
       </div>
 
-      {/* Filter pills */}
       <div className="saved-filters">
         {filters.map(f => (
           <button
@@ -63,9 +66,10 @@ export default function Saved({ showToast }) {
         ))}
       </div>
 
-      {/* Content */}
       <div className="saved-list">
-        {filtered.length === 0 ? (
+        {loading ? (
+          <div style={{ padding: '80px 20px', textAlign: 'center', color: '#555' }}>🔄 Loading your list...</div>
+        ) : filtered.length === 0 ? (
           <div className="saved-empty">
             <div className="saved-empty-icon">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
@@ -76,7 +80,7 @@ export default function Saved({ showToast }) {
               {activeFilter === 'All' ? 'No saved articles yet' : `No saved ${activeFilter} articles`}
             </div>
             <p className="saved-empty-sub">
-              Tap the bookmark icon on any article to save it here.
+              Tap the bookmark icon on any article to save it here forever.
             </p>
             <button className="saved-browse-btn" onClick={() => navigate('/home')}>
               Browse articles
