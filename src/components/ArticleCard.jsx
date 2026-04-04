@@ -205,8 +205,8 @@ export default function ArticleCard({ article, showToast, isDashboard }) {
           <div className="card-bottom-actions">
             <div className="interaction-group">
               {/* Like */}
-              <button 
-                className={`action-item like ${liked ? 'liked' : ''}`} 
+              <button
+                className={`action-item like ${liked ? 'liked' : ''}`}
                 onClick={handleLike}
                 title="Like"
               >
@@ -219,8 +219,8 @@ export default function ArticleCard({ article, showToast, isDashboard }) {
               </button>
 
               {/* Comment */}
-              <button 
-                className="action-item comment" 
+              <button
+                className="action-item comment"
                 onClick={openComments}
                 title="Comment"
               >
@@ -233,8 +233,8 @@ export default function ArticleCard({ article, showToast, isDashboard }) {
               </button>
 
               {/* Bookmark */}
-              <button 
-                className={`action-item save ${saved ? 'saved' : ''}`} 
+              <button
+                className={`action-item save ${saved ? 'saved' : ''}`}
                 onClick={handleSave}
                 title="Save"
               >
@@ -246,8 +246,8 @@ export default function ArticleCard({ article, showToast, isDashboard }) {
               </button>
 
               {/* Share */}
-              <button 
-                className="action-item share" 
+              <button
+                className="action-item share"
                 onClick={handleCopy}
                 title="Share"
               >
@@ -260,8 +260,8 @@ export default function ArticleCard({ article, showToast, isDashboard }) {
 
               {/* Delete (Owner only in Dashboard) */}
               {user && article.authorId === user.uid && isDashboard && (
-                <button 
-                  className="action-item delete" 
+                <button
+                  className="action-item delete"
                   onClick={handleDeleteBlog}
                   title="Delete Post"
                   style={{ marginLeft: 'auto' }}

@@ -1,3 +1,4 @@
+import { ErrorBoundary } from "./components/ErrorBoundary";
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { useState, useEffect } from 'react';
 import Welcome from './pages/Welcome';
@@ -24,7 +25,7 @@ function App() {
   };
 
   return (
-    <Router>
+    <ErrorBoundary><Router>
       <div className="bg-layer"></div>
       <div className="floating-icons">
         <div className="fi">✍️</div><div className="fi">📖</div><div className="fi">🔖</div>
@@ -58,7 +59,7 @@ function App() {
       <div className={`toast ${toastMsg ? 'show' : ''}`} id="toast-el">
         {toastMsg}
       </div>
-    </Router>
+    </Router></ErrorBoundary>
   );
 }
 

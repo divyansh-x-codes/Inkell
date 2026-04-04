@@ -19,7 +19,7 @@ export default function Signup({ showToast }) {
     setLoading(true);
     const { error } = await signUp(name, email, password);
     setLoading(false);
-    
+
     if (error) {
       showToast(error.message || 'Signup failed');
     } else {
@@ -84,9 +84,9 @@ export default function Signup({ showToast }) {
           onChange={(e) => setPassword(e.target.value)}
         />
       </div>
-      <button 
-        className="btn-primary" 
-        style={{ marginTop: '8px', opacity: loading ? 0.7 : 1 }} 
+      <button
+        className="btn-primary"
+        style={{ marginTop: '8px', opacity: loading ? 0.7 : 1 }}
         onClick={doSignup}
         disabled={loading}
       >

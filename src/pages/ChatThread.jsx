@@ -2,12 +2,13 @@ import { useState, useRef, useEffect } from 'react';
 import { useNavigate, useLocation, useParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { subscribeToMessages, sendMessage, getUserProfile } from '../utils/firebaseData';
+import { clearUnread } from '../utils/unread';
 
 export default function ChatThread({ showToast }) {
   const navigate = useNavigate();
   const location = useLocation();
   const { user } = useAuth();
-  const { id } = useParams(); // This is the conversationId
+  const { id } = useParams(); // conversationId
 
   const [recipient, setRecipient] = useState(location.state?.recipientUserId ? {
     id: location.state.recipientUserId,
@@ -39,13 +40,20 @@ export default function ChatThread({ showToast }) {
     }
   }, [id, user, recipient]);
 
-  // 2. Real-time subscription
+  // 2. Real-time subscription & Clear Unread
   useEffect(() => {
     if (!id) return;
+    
+    // Clear unread for this thread when entering
+    clearUnread(id);
+
     const unsubscribe = subscribeToMessages(id, (data) => {
       setMessages(data);
       setLoading(false);
+      // Clear unread again if new messages arrive while we are here
+      clearUnread(id);
     });
+    
     return () => unsubscribe();
   }, [id]);
 
@@ -68,7 +76,8 @@ export default function ChatThread({ showToast }) {
   const getInitials = (name) => {
     if (!name) return 'U';
     const s = name.trim().split(' ');
-    return s.length > 1 ? (s[0][0] + s[1][0]).toUpperCase() : name[0].toUpperCase();
+    // Handle single names or double names
+    return s.length > 1 ? (s[0][0] + (s[1][0] || '')).toUpperCase() : name[0].toUpperCase();
   };
 
   const avatarColors = ['#cc4400','#2b9348','#7046a0','#1a6fa8','#c0392b','#16a085'];
@@ -88,7 +97,7 @@ export default function ChatThread({ showToast }) {
           </svg>
         </button>
 
-        <div className="chat-header-info" onClick={() => navigate(`/profile/${encodeURIComponent(displayName)}`, { state: { authorId: recipient.id } })}>
+        <div className="chat-header-info" onClick={() => navigate(`/profile/${encodeURIComponent(displayName)}`, { state: { authorId: recipient?.id } })}>
           {recipient?.avatar
             ? <img src={recipient.avatar} alt={displayName} className="chat-header-avatar-img" />
             : <div className="chat-header-avatar-letter" style={{ background: colorForName(displayName) }}>{getInitials(displayName)}</div>
@@ -110,8 +119,10 @@ export default function ChatThread({ showToast }) {
 
       <div className="chat-messages-area">
         {messages.length === 0 && !loading && (
-          <div style={{ textAlign: 'center', padding: '40px 20px', color: '#444', fontSize: '0.9rem' }}>
-            No messages yet. Say hello! 👋
+          <div style={{ textAlign: 'center', padding: '100px 20px', color: '#444', fontSize: '0.9rem' }}>
+            <div style={{ fontSize: '3rem', marginBottom: 20 }}>💬</div>
+            <p style={{ color: 'white', fontWeight: 600, marginBottom: 8 }}>Start the conversation</p>
+            <p style={{ opacity: 0.6 }}>Say hello to {displayName}! 👋</p>
           </div>
         )}
         {messages.map(msg => (

@@ -178,16 +178,18 @@ export const subscribeToFollowedBlogs = (userId, setBlogs) => {
 export const toggleLike = async (blogId, userId) => {
   if (!userId) return;
   const likeRef = doc(db, BLOGS_COL, blogId, "likes", userId);
+  const blogRef = doc(db, BLOGS_COL, blogId);
   try {
     const snap = await getDoc(likeRef);
     if (snap.exists()) {
-      await deleteDoc(likeRef); // unlike
+      // Unlike: remove sub-doc and decrement count
+      await deleteDoc(likeRef);
+      await updateDoc(blogRef, { likesCount: increment(-1) });
       return false;
     } else {
-      await setDoc(likeRef, {
-        userId,
-        createdAt: Date.now()
-      });
+      // Like: add sub-doc and increment count
+      await setDoc(likeRef, { userId, createdAt: Date.now() });
+      await updateDoc(blogRef, { likesCount: increment(1) });
       return true;
     }
   } catch (error) {
@@ -248,14 +250,14 @@ export const subscribeToUserActivity = (userId, setActivity) => {
 export const subscribeToUserLikes = (userId, setLikedArticles) => {
   // 💎 Collection Group Query: Finds all 'likes' docs across all articles where userId matches
   const q = query(collectionGroup(db, "likes"), where("userId", "==", userId));
-  
+
   return onSnapshot(q, async (snapshot) => {
     const blogIds = snapshot.docs.map(doc => doc.ref.parent.parent.id);
     if (!blogIds.length) {
       setLikedArticles([]);
       return;
     }
-    
+
     // Fetch the actual article contents for those IDs
     // Firestore 'in' query is limited to 10-30 IDs usually, but perfect for dashboard recent likes
     const blogsQuery = query(collection(db, BLOGS_COL), where("__name__", "in", blogIds.slice(0, 30)));
@@ -450,6 +452,23 @@ export const recalculateCommentsCount = async (blogId) => {
   } catch (err) {
     console.error("Recalculate failed:", err);
     return null;
+  }
+};
+
+// ─── User Search ─────────────────────────────────────────────────────────────
+export const searchUsersByName = async (searchTerm) => {
+  if (!searchTerm) return [];
+  try {
+    const q = query(
+      collection(db, USERS_COL),
+      where("name", ">=", searchTerm),
+      where("name", "<=", searchTerm + "\uf8ff")
+    );
+    const snapshot = await getDocs(q);
+    return snapshot.docs.map(d => ({ uid: d.id, ...d.data() }));
+  } catch (err) {
+    console.warn("Search users failed:", err);
+    return [];
   }
 };
 

@@ -5,10 +5,10 @@ import BottomNav from '../components/BottomNav';
 import { useAuth } from '../context/AuthContext';
 import { db } from '../firebase';
 import { doc, onSnapshot } from 'firebase/firestore';
-import { 
-  toggleLike, 
-  toggleSave, 
-  isBlogLiked, 
+import {
+  toggleLike,
+  toggleSave,
+  isBlogLiked,
   isBlogSaved,
   subscribeToLikesCount,
   subscribeToUserLike

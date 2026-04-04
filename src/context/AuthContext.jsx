@@ -29,7 +29,7 @@ export const AuthProvider = ({ children }) => {
       avatar: firebaseUser.photoURL || null,
       lastLogin: serverTimestamp(),
     };
-    
+
     // Only set non-null additional info
     Object.keys(additionalInfo).forEach(key => {
       if (additionalInfo[key] !== undefined) userData[key] = additionalInfo[key];
@@ -55,7 +55,7 @@ export const AuthProvider = ({ children }) => {
         try {
           const userRef = doc(db, 'users', firebaseUser.uid);
           const snap = await getDoc(userRef);
-          
+
           if (snap.exists()) {
             profileData = { ...profileData, ...snap.data() };
           } else {

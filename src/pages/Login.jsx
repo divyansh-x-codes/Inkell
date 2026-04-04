@@ -52,9 +52,9 @@ export default function Login({ showToast }) {
           onChange={(e) => setPassword(e.target.value)}
         />
       </div>
-      <button 
-        className="btn-primary" 
-        style={{ marginTop: '8px', opacity: loading ? 0.7 : 1 }} 
+      <button
+        className="btn-primary"
+        style={{ marginTop: '8px', opacity: loading ? 0.7 : 1 }}
         onClick={doLogin}
         disabled={loading}
       >

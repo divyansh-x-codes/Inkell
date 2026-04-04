@@ -1,7 +1,8 @@
 import { useState, useMemo, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import BottomNav from '../components/BottomNav';
-import { fetchArticles } from '../utils/firebaseData';
+import { fetchArticles, getConversationId, searchUsersByName } from '../utils/firebaseData';
+import { useAuth } from '../context/AuthContext';
 
 const CATEGORIES = ['All', 'Technology', 'Design', 'Digital Media', 'Politics', 'Emerging Tech', 'Productivity'];
 
@@ -15,6 +16,7 @@ const colorFor = (name) => authorColors[(name || 'A').charCodeAt(0) % authorColo
 
 export default function Search({ showToast }) {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const inputRef = useRef(null);
   const [query, setQuery] = useState('');
   const [activeCategory, setActiveCategory] = useState('All');
@@ -25,7 +27,6 @@ export default function Search({ showToast }) {
   // 1. Fetch with Error Resilience
   useEffect(() => {
     fetchArticles().then(data => {
-      // Filter out 'broken' documents that may have no title at all
       const validData = (data || []).filter(item => item && item.title);
       setArticles(validData);
       setLoading(false);
@@ -35,15 +36,17 @@ export default function Search({ showToast }) {
     });
   }, []);
 
-  // 2. Authors Memo with Safe Name Check
+  // 2. Authors Memo with authorId tracking
   const AUTHORS = useMemo(() => {
     const map = new Map();
     articles.forEach(a => {
       const name = a.authorName || a.author_name || a.name || 'Anonymous';
+      const authorId = a.authorId || null;
       if (!map.has(name)) {
-        map.set(name, { name, count: 1 });
+        map.set(name, { name, authorId, count: 1 });
       } else {
         map.get(name).count++;
+        if (!map.get(name).authorId && authorId) map.get(name).authorId = authorId;
       }
     });
     return [...map.values()];
@@ -59,26 +62,39 @@ export default function Search({ showToast }) {
       const author = (a.authorName || a.author_name || a.name || '').toLowerCase();
       const category = (a.category || '').toLowerCase();
 
-      const catMatch = activeCategory === 'All' ||
-        category === activeCategory.toLowerCase();
-      
-      const textMatch = !q ||
-        title.includes(q) ||
-        tagline.includes(q) ||
-        author.includes(q) ||
-        category.includes(q);
+      const catMatch = activeCategory === 'All' || category === activeCategory.toLowerCase();
+      const textMatch = !q || title.includes(q) || tagline.includes(q) || author.includes(q) || category.includes(q);
 
       return catMatch && textMatch;
     });
   }, [q, activeCategory, articles]);
 
-  // 4. Matched Authors with Safe Filter
+  // 4. Matched Authors
   const matchedAuthors = useMemo(() => {
     if (!q) return [];
     return AUTHORS.filter(a => (a.name || '').toLowerCase().includes(q));
   }, [q, AUTHORS]);
 
   const isSearching = q.length > 0;
+
+  // DM an author from search
+  const handleDMAuthor = (e, author) => {
+    e.stopPropagation();
+    if (!user) { showToast('Login to message authors'); navigate('/login'); return; }
+    if (!author.authorId) {
+      showToast('Cannot message this author yet');
+      return;
+    }
+    if (author.authorId === user.uid) { showToast("That's you!"); return; }
+    const convoId = getConversationId(user.uid, author.authorId);
+    navigate(`/chat/${convoId}`, {
+      state: {
+        recipientUserId: author.authorId,
+        recipientName: author.name,
+        recipientAvatar: null,
+      }
+    });
+  };
 
   return (
     <div className="view active search-page">
@@ -133,7 +149,7 @@ export default function Search({ showToast }) {
 
         <div style={{ flex: 1, overflowY: 'auto', scrollbarWidth: 'none' }}>
           <div style={{ paddingBottom: 90 }}>
-            
+
             {loading ? (
               <div style={{ padding: '60px 24px', textAlign: 'center', color: '#333' }}>
                 <div className="search-loading-spinner" style={{ marginBottom: 12 }}>⏳</div>
@@ -149,7 +165,7 @@ export default function Search({ showToast }) {
                       <div
                         key={a.name}
                         className="author-search-item"
-                        onClick={() => navigate(`/profile/${encodeURIComponent(a.name)}`)}
+                        onClick={() => navigate(`/profile/${encodeURIComponent(a.name)}`, { state: { authorId: a.authorId } })}
                       >
                         <div className="search-author-avatar" style={{ background: colorFor(a.name) }}>
                           {getInitials(a.name)}
@@ -158,7 +174,21 @@ export default function Search({ showToast }) {
                           <div className="search-author-name">{a.name}</div>
                           <div className="search-author-meta">{a.count} article{a.count !== 1 ? 's' : ''}</div>
                         </div>
-                        <svg viewBox="0 0 24 24" fill="none" stroke="#333" strokeWidth="2" style={{ width: 14, height: 14, marginLeft: 'auto' }}>
+
+                        {/* DM button on author card */}
+                        {a.authorId && a.authorId !== user?.uid && (
+                          <button
+                            className="search-dm-btn"
+                            onClick={(e) => handleDMAuthor(e, a)}
+                            title={`Message ${a.name}`}
+                          >
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" style={{ width: 15, height: 15 }}>
+                              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+                            </svg>
+                          </button>
+                        )}
+
+                        <svg viewBox="0 0 24 24" fill="none" stroke="#333" strokeWidth="2" style={{ width: 14, height: 14, marginLeft: 6, flexShrink: 0 }}>
                           <polyline points="9 18 15 12 9 6"></polyline>
                         </svg>
                       </div>
@@ -218,7 +248,12 @@ export default function Search({ showToast }) {
                         <div className="list-meta-row">
                           <span
                             className="list-author-link"
-                            onClick={e => { e.stopPropagation(); navigate(`/profile/${encodeURIComponent(article.authorName || article.author_name || article.name)}`); }}
+                            onClick={e => {
+                              e.stopPropagation();
+                              navigate(`/profile/${encodeURIComponent(article.authorName || article.author_name || article.name)}`, {
+                                state: { authorId: article.authorId }
+                              });
+                            }}
                           >
                             {article.authorName || article.author_name || article.name}
                           </span>

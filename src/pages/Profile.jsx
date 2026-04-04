@@ -4,7 +4,16 @@ import BottomNav from '../components/BottomNav';
 import ArticleCard from '../components/ArticleCard';
 import SubscribeModal from '../components/SubscribeModal';
 import { useAuth } from '../context/AuthContext';
-import { getConversationId, getUserProfile, getArticlesByAuthor } from '../utils/firebaseData';
+import {
+  getConversationId,
+  subscribeToUserProfile,
+  subscribeToUserArticles,
+  subscribeToUserActivity,
+  subscribeToUserLikes,
+  followAuthor,
+  unfollowAuthor,
+  getFollowing,
+} from '../utils/firebaseData';
 
 const VerifiedIcon = ({ size = 20 }) => (
   <svg viewBox="0 0 24 24" fill="none" stroke="#f4622a" strokeWidth="2" style={{ width: size, height: size }}>
@@ -39,9 +48,9 @@ export default function Profile({ showToast }) {
   const authorId = location.state?.authorId;
   const decodedName = decodeURIComponent(username || '').replace('@', '');
 
-  // 1. Profile Sync (Header Stats)
+  // 1. Profile Sync (Real-time)
   useEffect(() => {
-    const uid = authorId || (user?.uid && (user.name === decodedName || user.uid === authorId) ? user.uid : null);
+    const uid = authorId || null;
     if (!uid) {
       setProfile({
         name: decodedName || 'Creator',
@@ -52,33 +61,41 @@ export default function Profile({ showToast }) {
       setLoading(false);
       return;
     }
-    
+
     setLoading(true);
     const unsub = subscribeToUserProfile(uid, (p) => {
       setProfile(p);
       setLoading(false);
     });
-    return () => unsub();
-  }, [authorId, decodedName, user]);
+    return () => unsub && unsub();
+  }, [authorId, decodedName]);
 
-  // 2. Tab Sync (Individual Listeners)
+  // 2. Follow state sync
   useEffect(() => {
-    if (!profile?.uid && !profile?.id) return;
-    const uid = profile.uid || profile.id;
+    if (!user?.uid || !authorId) return;
+    getFollowing(user.uid).then(following => {
+      setFollowed(following.includes(authorId));
+    });
+  }, [user, authorId]);
+
+  // 3. Tab Sync (Individual Listeners)
+  useEffect(() => {
+    const uid = profile?.uid || profile?.id;
+    if (!uid) return;
 
     let unsubPosts, unsubActivity, unsubLikes;
 
     if (activeTab === 'Posts') {
       unsubPosts = subscribeToUserArticles(uid, (data) => {
-        setPosts([...data].sort((a,b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0)));
+        setPosts([...data].sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0)));
       });
     } else if (activeTab === 'Activity') {
       unsubActivity = subscribeToUserActivity(uid, (data) => {
-        setActivity([...data].sort((a,b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0)));
+        setActivity([...data].sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0)));
       });
     } else if (activeTab === 'Likes') {
       unsubLikes = subscribeToUserLikes(uid, (data) => {
-        setLikedPosts([...data].sort((a,b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0)));
+        setLikedPosts([...data].sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0)));
       });
     }
 
@@ -89,7 +106,8 @@ export default function Profile({ showToast }) {
     };
   }, [profile, activeTab]);
 
-  const handleSubscribe = () => {
+  const handleSubscribe = async () => {
+    if (!user) { showToast('Login to subscribe'); navigate('/login'); return; }
     if (subscribed) {
       setSubscribed(false);
       showToast('Unsubscribed');
@@ -104,32 +122,37 @@ export default function Profile({ showToast }) {
     showToast(`Subscribed to ${profile?.name || 'author'}`);
   };
 
-  const handleFollow = () => {
-    setFollowed(!followed);
-    showToast(followed ? 'Unfollowed' : `Following ${profile?.name}`);
+  const handleFollow = async () => {
+    if (!user) { showToast('Login to follow'); navigate('/login'); return; }
+    const targetUid = profile?.uid || profile?.id || authorId;
+    if (!targetUid) return;
+    if (followed) {
+      setFollowed(false);
+      await unfollowAuthor(user.uid, targetUid);
+      showToast('Unfollowed');
+    } else {
+      setFollowed(true);
+      await followAuthor(user.uid, targetUid);
+      showToast(`Following ${profile?.name}`);
+    }
   };
 
   const openChat = () => {
     if (!user) {
-      showToast('Login to message authors');
+      showToast('Login to message');
       navigate('/login');
       return;
     }
     const targetUid = profile?.uid || profile?.id || authorId;
-    if (!targetUid) {
-      showToast('Cannot start chat with this creator');
-      return;
-    }
-    if (targetUid === user.uid) {
-      showToast("This is your own profile!");
-      return;
-    }
+    if (!targetUid) { showToast('Cannot start chat with this creator'); return; }
+    if (targetUid === user.uid) { showToast("That's your own profile!"); return; }
+
     const convoId = getConversationId(user.uid, targetUid);
     navigate(`/chat/${convoId}`, {
       state: {
         recipientUserId: targetUid,
         recipientName: profile.name,
-        recipientAvatar: profile.avatar
+        recipientAvatar: profile.avatar || null,
       }
     });
   };
@@ -197,21 +220,21 @@ export default function Profile({ showToast }) {
               </div>
 
               <p className="profile-bio">{profile.bio || 'Sharing stories on Inkwell.'}</p>
-              
+
               <div style={{ display: 'flex', gap: '20px', marginTop: '12px', marginBottom: '4px' }}>
                 <div style={{ fontSize: '0.92rem', color: 'var(--white)' }}>
-                  <span style={{ fontWeight: 700 }}>{profile.followersCount || 0}</span> 
+                  <span style={{ fontWeight: 700 }}>{profile.followersCount || 0}</span>
                   <span style={{ color: 'var(--gray)', marginLeft: '6px' }}>Subscribers</span>
                 </div>
                 <div style={{ fontSize: '0.92rem', color: 'var(--white)' }}>
-                  <span style={{ fontWeight: 700 }}>{profile.followingCount || 0}</span> 
+                  <span style={{ fontWeight: 700 }}>{profile.followingCount || 0}</span>
                   <span style={{ color: 'var(--gray)', marginLeft: '6px' }}>Following</span>
                 </div>
               </div>
 
               <div className="profile-action-buttons">
                 {isOwnProfile ? (
-                  <button className="btn-subscribe-main" onClick={() => showToast('Profile editor coming soon')}>Edit Profile</button>
+                  <button className="btn-subscribe-main" onClick={() => navigate('/edit-profile')}>Edit Profile</button>
                 ) : (
                   <>
                     <button
@@ -228,10 +251,9 @@ export default function Profile({ showToast }) {
                     >
                       {followed ? 'Following' : 'Follow'}
                     </button>
-                    <button className="btn-share-icon" onClick={openChat} title="Message">
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ width: '20px', height: '20px' }}>
-                        <line x1="22" y1="2" x2="11" y2="13"></line>
-                        <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                    <button className="btn-message-icon" onClick={openChat} title="Send Message">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" style={{ width: '18px', height: '18px' }}>
+                        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
                       </svg>
                     </button>
                   </>
@@ -260,12 +282,7 @@ export default function Profile({ showToast }) {
                     </div>
                   ) : (
                     posts.map(a => (
-                      <ArticleCard 
-                        key={a.id} 
-                        article={a} 
-                        showToast={showToast} 
-                        isDashboard={isOwnProfile} 
-                      />
+                      <ArticleCard key={a.id} article={a} showToast={showToast} isDashboard={isOwnProfile} />
                     ))
                   )}
                 </div>
@@ -282,7 +299,7 @@ export default function Profile({ showToast }) {
                       <div key={item.id} className="activity-item" style={{ borderBottom: '1px solid #222', padding: '16px 0' }}>
                         <p style={{ color: 'var(--orange)', fontSize: '0.8rem', fontWeight: 600, textTransform: 'uppercase', marginBottom: 4 }}>Commented</p>
                         <p style={{ color: 'white', fontSize: '0.95rem', marginBottom: 8 }}>"{item.content}"</p>
-                        <p style={{ color: 'var(--gray)', fontSize: '0.8rem' }}>On article: {item.blogId.slice(0, 8)}...</p>
+                        <p style={{ color: 'var(--gray)', fontSize: '0.8rem' }}>On article: {item.blogId?.slice(0, 8)}...</p>
                       </div>
                     ))
                   )}
@@ -297,11 +314,7 @@ export default function Profile({ showToast }) {
                     </div>
                   ) : (
                     likedPosts.map(a => (
-                      <ArticleCard 
-                        key={a.id} 
-                        article={a} 
-                        showToast={showToast} 
-                      />
+                      <ArticleCard key={a.id} article={a} showToast={showToast} />
                     ))
                   )}
                 </div>
