@@ -76,6 +76,15 @@ export default function Signup({ showToast }) {
         />
       </div>
       <div className="input-group">
+        <label>Email</label>
+        <input
+          type="email"
+          placeholder="you@example.com"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+        />
+      </div>
+      <div className="input-group">
         <label>Password</label>
         <input
           type="password"

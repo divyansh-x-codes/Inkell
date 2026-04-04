@@ -16,6 +16,20 @@ import EditProfile from './pages/EditProfile';
 import Saved from './pages/Saved';
 import AddArticle from './pages/AddArticle';
 
+import { useAuth } from "./context/AuthContext";
+
+const ProtectedRoute = ({ children }) => {
+  const { user, loading } = useAuth();
+  if (loading) return <div className="loading-screen">Loading...</div>;
+  return user ? children : <Navigate to="/" replace />;
+};
+
+const PublicRoute = ({ children }) => {
+  const { user, loading } = useAuth();
+  if (loading) return <div className="loading-screen">Loading...</div>;
+  return !user ? children : <Navigate to="/home" replace />;
+};
+
 function App() {
   const [toastMsg, setToastMsg] = useState('');
 
@@ -36,22 +50,24 @@ function App() {
       <div className="app">
         <div className="screen">
           <Routes>
-            <Route path="/" element={<Welcome />} />
-            <Route path="/login" element={<Login showToast={showToast} />} />
-            <Route path="/signup" element={<Signup showToast={showToast} />} />
-            <Route path="/home" element={<Home showToast={showToast} />} />
-            <Route path="/search" element={<Search showToast={showToast} />} />
-            <Route path="/article/:id" element={<Reader showToast={showToast} />} />
-            <Route path="/comments/:id" element={<Comments showToast={showToast} />} />
-            <Route path="/profile/:username" element={<Profile showToast={showToast} />} />
+            <Route path="/" element={<PublicRoute><Welcome /></PublicRoute>} />
+            <Route path="/login" element={<PublicRoute><Login showToast={showToast} /></PublicRoute>} />
+            <Route path="/signup" element={<PublicRoute><Signup showToast={showToast} /></PublicRoute>} />
+
+            {/* Protected Dashboard/Social Routes */}
+            <Route path="/home" element={<ProtectedRoute><Home showToast={showToast} /></ProtectedRoute>} />
+            <Route path="/search" element={<ProtectedRoute><Search showToast={showToast} /></ProtectedRoute>} />
+            <Route path="/article/:id" element={<ProtectedRoute><Reader showToast={showToast} /></ProtectedRoute>} />
+            <Route path="/comments/:id" element={<ProtectedRoute><Comments showToast={showToast} /></ProtectedRoute>} />
+            <Route path="/profile/:username" element={<ProtectedRoute><Profile showToast={showToast} /></ProtectedRoute>} />
             <Route path="/profile" element={<Navigate to="/my-profile" replace />} />
-            <Route path="/conversations" element={<Conversations showToast={showToast} />} />
-            <Route path="/chat/:id" element={<ChatThread showToast={showToast} />} />
-            <Route path="/my-profile" element={<MyProfile showToast={showToast} />} />
-            <Route path="/edit-profile" element={<EditProfile showToast={showToast} />} />
-            <Route path="/edit-article/:id" element={<AddArticle showToast={showToast} />} />
-            <Route path="/saved" element={<Saved showToast={showToast} />} />
-            <Route path="/add-article" element={<AddArticle showToast={showToast} />} />
+            <Route path="/conversations" element={<ProtectedRoute><Conversations showToast={showToast} /></ProtectedRoute>} />
+            <Route path="/chat/:id" element={<ProtectedRoute><ChatThread showToast={showToast} /></ProtectedRoute>} />
+            <Route path="/my-profile" element={<ProtectedRoute><MyProfile showToast={showToast} /></ProtectedRoute>} />
+            <Route path="/edit-profile" element={<ProtectedRoute><EditProfile showToast={showToast} /></ProtectedRoute>} />
+            <Route path="/edit-article/:id" element={<ProtectedRoute><AddArticle showToast={showToast} /></ProtectedRoute>} />
+            <Route path="/saved" element={<ProtectedRoute><Saved showToast={showToast} /></ProtectedRoute>} />
+            <Route path="/add-article" element={<ProtectedRoute><AddArticle showToast={showToast} /></ProtectedRoute>} />
           </Routes>
         </div>
       </div>
