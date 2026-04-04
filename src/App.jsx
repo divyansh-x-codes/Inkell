@@ -13,6 +13,7 @@ import ChatThread from './pages/ChatThread';
 import MyProfile from './pages/MyProfile';
 import EditProfile from './pages/EditProfile';
 import Saved from './pages/Saved';
+import AddArticle from './pages/AddArticle';
 
 function App() {
   const [toastMsg, setToastMsg] = useState('');
@@ -47,6 +48,7 @@ function App() {
             <Route path="/my-profile" element={<MyProfile showToast={showToast} />} />
             <Route path="/edit-profile" element={<EditProfile showToast={showToast} />} />
             <Route path="/saved" element={<Saved showToast={showToast} />} />
+            <Route path="/add-article" element={<AddArticle showToast={showToast} />} />
           </Routes>
         </div>
       </div>

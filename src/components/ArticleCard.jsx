@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import SubscribeModal from './SubscribeModal';
+import { useAuth } from '../context/AuthContext';
+import { followAuthor, unfollowAuthor } from '../utils/firebaseData';
 
 // ── Shared localStorage helpers ─────────────────────────────
 function getStore(key) {
@@ -12,13 +14,14 @@ function setStore(key, data) {
 
 export default function ArticleCard({ article, showToast }) {
   const navigate  = useNavigate();
+  const { user } = useAuth();
   const id        = article.id;
 
   // ── Initialise all states from localStorage ──────────────
   const [liked, setLiked] = useState(() => !!getStore('inkwell_likes')[id]);
   const [saved, setSaved] = useState(() => !!getStore('inkwell_saves')[id]);
   const [subscribed, setSubscribed] = useState(() =>
-    !!getStore('inkwell_subscriptions')[article.name]
+    !!getStore('inkwell_subscriptions')[article.authorId || article.name]
   );
   const [likesCount, setLikesCount] = useState(() => {
     const stored = getStore('inkwell_like_counts')[id];
@@ -58,12 +61,13 @@ export default function ArticleCard({ article, showToast }) {
   const handleSubscribe = (e) => {
     e.stopPropagation();
     if (subscribed) {
-      // Already subscribed — toggle off
       setSubscribed(false);
       const subs = getStore('inkwell_subscriptions');
-      delete subs[article.name];
+      delete subs[article.authorId || article.name];
       setStore('inkwell_subscriptions', subs);
-      showToast('Unsubscribed');
+      // Unfollow in Firestore if logged in
+      if (user?.uid && article.authorId) unfollowAuthor(user.uid, article.authorId);
+      showToast('Unfollowed');
     } else {
       setShowModal(true);
     }
@@ -71,11 +75,14 @@ export default function ArticleCard({ article, showToast }) {
 
   const confirmSubscribe = () => {
     setSubscribed(true);
+    const authorKey = article.authorId || article.name;
     const subs = getStore('inkwell_subscriptions');
-    subs[article.name] = true;
+    subs[authorKey] = true;
     setStore('inkwell_subscriptions', subs);
+    // Follow in Firestore if logged in
+    if (user?.uid && article.authorId) followAuthor(user.uid, article.authorId);
     setShowModal(false);
-    showToast(`You'll be notified when ${article.name}'s newsletter launches!`);
+    showToast(`Following ${article.authorName || article.name}!`);
   };
 
   const handleCopy = (e) => {
@@ -83,9 +90,12 @@ export default function ArticleCard({ article, showToast }) {
     showToast('Link copied!');
   };
 
+  const authorName   = article.authorName || article.name || 'Anonymous';
+  const coverImg     = article.coverImage || article.cover_image || null;
+
   const openReader   = ()  => navigate(`/article/${id}`);
   const openComments = (e) => { e.stopPropagation(); navigate(`/comments/${id}`); };
-  const openProfile  = (e) => { e.stopPropagation(); navigate(`/profile/${encodeURIComponent(article.name)}`); };
+  const openProfile  = (e) => { e.stopPropagation(); navigate(`/profile/${encodeURIComponent(authorName)}`); };
 
   const getInitials = (name) => {
     if (!name) return 'A';
@@ -97,23 +107,23 @@ export default function ArticleCard({ article, showToast }) {
     <>
       {showModal && (
         <SubscribeModal
-          author={article.name}
+          author={authorName}
           onClose={() => setShowModal(false)}
           onConfirm={confirmSubscribe}
         />
       )}
       <div className="chronicle-card" onClick={openReader}>
-      {article.coverImage && (
+      {coverImg && (
         <div className="card-image-wrap">
           {article.id === 0 && <div className="editor-pick">Editor's Pick</div>}
-          <img src={article.coverImage} className="cover-img" alt="cover" />
+          <img src={coverImg} className="cover-img" alt="cover" />
         </div>
       )}
 
       <div className="card-inner">
         <div className="card-author-row" onClick={openProfile} style={{ cursor: 'pointer' }}>
-          <div className="author-letter-avatar">{getInitials(article.name)}</div>
-          <span className="author-name-small">{article.name}</span>
+          <div className="author-letter-avatar">{getInitials(authorName)}</div>
+          <span className="author-name-small">{authorName}</span>
           <span className="dot">·</span>
           <span className="author-time">{article.readTime || '5 min read'}</span>
           <span className="dot">·</span>

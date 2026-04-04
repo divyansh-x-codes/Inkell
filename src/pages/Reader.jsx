@@ -156,7 +156,7 @@ export default function Reader({ showToast }) {
           
           <div className="reader-body">
             {(article.cover_image || article.coverImage) && <img src={article.cover_image || article.coverImage} className="reader-hero-img" alt="cover" />}
-            <div dangerouslySetInnerHTML={{ __html: article.body }} />
+            <div style={{ whiteSpace: 'pre-wrap', lineHeight: 1.8, color: '#ccc' }}>{article.content || article.body || ''}</div>
           </div>
         </div>
 

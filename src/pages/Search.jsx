@@ -1,7 +1,7 @@
 import { useState, useMemo, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import BottomNav from '../components/BottomNav';
-import { articles as mockArticles } from '../data';
+import { fetchArticles } from '../utils/firebaseData';
 
 const CATEGORIES = ['All', 'Technology', 'Design', 'Digital Media', 'Politics', 'Emerging Tech', 'Productivity'];
 
@@ -19,7 +19,15 @@ export default function Search({ showToast }) {
   const [query, setQuery] = useState('');
   const [activeCategory, setActiveCategory] = useState('All');
   const [focused, setFocused] = useState(false);
-  const articles = mockArticles;
+  const [articles, setArticles] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetchArticles().then(data => {
+      setArticles(data);
+      setLoading(false);
+    });
+  }, []);
 
   const AUTHORS = useMemo(() => {
     const map = new Map();
