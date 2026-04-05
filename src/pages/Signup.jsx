@@ -32,12 +32,15 @@ export default function Signup({ showToast }) {
     setLoadingGoogle(true);
     const { user, error } = await loginWithGoogle();
     setLoadingGoogle(false);
+    
     if (error) {
-      showToast(error.message || 'Google login failed');
-    } else {
+      showToast(error.message || 'Google signup failed');
+    } else if (user) {
       showToast(`Welcome, ${user.displayName || 'User'}!`);
       navigate('/home');
     }
+    // If user is null but no error (isMobile redirect), the app will reload and 
+    // PublicRoute/onAuthStateChanged will take over navigation.
   };
 
   return (

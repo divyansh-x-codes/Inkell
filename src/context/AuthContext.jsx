@@ -46,7 +46,9 @@ export const AuthProvider = ({ children }) => {
   // Listen to Firebase auth state
   useEffect(() => {
     // 1. Check for redirect results (Google login on mobile)
-    getRedirectResult(auth).catch(err => console.error("Redirect error:", err));
+    getRedirectResult(auth).then(res => {
+      if (res?.user) console.log("Redirect success for:", res.user.email);
+    }).catch(err => console.error("Redirect error:", err));
 
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
