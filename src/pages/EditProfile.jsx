@@ -31,15 +31,52 @@ export default function EditProfile({ showToast }) {
     return s.length > 1 ? (s[0][0] + s[1][0]).toUpperCase() : n[0].toUpperCase();
   };
 
-  const handlePhotoSelect = (e) => {
+  const compressImage = (dataUrl, maxWidth = 400, maxHeight = 400) => {
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        let width = img.width;
+        let height = img.height;
+
+        if (width > height) {
+          if (width > maxWidth) {
+            height *= maxWidth / width;
+            width = maxWidth;
+          }
+        } else {
+          if (height > maxHeight) {
+            width *= maxHeight / height;
+            height = maxHeight;
+          }
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL('image/jpeg', 0.7)); // High compression
+      };
+      img.src = dataUrl;
+    });
+  };
+
+  const handlePhotoSelect = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
-    if (file.size > 5 * 1024 * 1024) {
-      showToast('Photo must be under 5MB');
+    
+    // Early filter: 10MB (to prevent memory crash before compression)
+    if (file.size > 10 * 1024 * 1024) {
+      showToast('Photo too large (max 10MB)');
       return;
     }
+
     const reader = new FileReader();
-    reader.onload = (ev) => setAvatar(ev.target.result);
+    reader.onload = async (ev) => {
+      const compressed = await compressImage(ev.target.result);
+      setAvatar(compressed);
+      showToast('Photo optimized!');
+    };
     reader.readAsDataURL(file);
   };
 

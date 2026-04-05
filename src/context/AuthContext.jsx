@@ -176,8 +176,10 @@ export const AuthProvider = ({ children }) => {
   const signUp = async (name, email, password) => {
     try {
       const result = await createUserWithEmailAndPassword(auth, email, password);
-      // Immediately sync with the provided name
+      // 🔥 CRITICAL: Must await sync for new users before they try to edit profile
       await syncUserToFirestore(result.user, { name });
+      const fullProfile = { uid: result.user.uid, name, email: result.user.email };
+      setUser(fullProfile); // Set early so app responds fast
       return { user: result.user, error: null };
     } catch (error) {
       return { user: null, error };
@@ -201,9 +203,11 @@ export const AuthProvider = ({ children }) => {
     try {
       if (isMobile) {
         await signInWithRedirect(auth, provider);
-        return { user: null, error: null }; // result handled by getRedirectResult
+        return { user: null, error: null }; 
       } else {
         const result = await signInWithPopup(auth, provider);
+        // 🔥 Priming sync for Google users in popup mode
+        await syncUserToFirestore(result.user);
         return { user: result.user, error: null };
       }
     } catch (error) {
