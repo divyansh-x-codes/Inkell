@@ -8,7 +8,7 @@ export default function Welcome() {
 
   useEffect(() => {
     if (user) {
-      navigate('/home');
+      navigate('/home', { replace: true });
     }
   }, [user, navigate]);
 

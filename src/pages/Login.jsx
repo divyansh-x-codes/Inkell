@@ -22,7 +22,7 @@ export default function Login({ showToast }) {
       showToast(error.message || 'Login failed');
     } else {
       showToast('Welcome back!');
-      navigate('/home');
+      navigate('/home', { replace: true });
     }
   };
 

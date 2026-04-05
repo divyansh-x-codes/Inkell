@@ -2,6 +2,10 @@ import { createContext, useContext, useState, useEffect } from 'react';
 import { auth, db } from '../firebase';
 import {
   GoogleAuthProvider,
+  getAuth,
+  setPersistence,
+  browserLocalPersistence,
+  browserSessionPersistence,
   signInWithPopup,
   signInWithRedirect,
   getRedirectResult,
@@ -12,6 +16,24 @@ import {
 } from 'firebase/auth';
 import { doc, setDoc, getDoc, serverTimestamp } from 'firebase/firestore';
 import { subscribeToConversations } from '../utils/firebaseData';
+
+// Safe Storage Wrapper (BEST FIX)
+export const safeStorage = {
+  set(key, value) {
+    try {
+      localStorage.setItem(key, value);
+    } catch {
+      console.warn("Storage blocked");
+    }
+  },
+  get(key) {
+    try {
+      return localStorage.getItem(key);
+    } catch {
+      return null;
+    }
+  }
+};
 
 const AuthContext = createContext();
 
@@ -43,6 +65,23 @@ export const AuthProvider = ({ children }) => {
     return userData;
   };
 
+  // ─── CRITICAL PERSISTENCE (LOCAL & SAFARI FALLBACK) ────────────────────────
+  useEffect(() => {
+    const initAuth = async () => {
+      try {
+        await setPersistence(auth, browserLocalPersistence);
+      } catch (err) {
+        console.warn("Local persistence failed, falling back to session:", err);
+        try {
+          await setPersistence(auth, browserSessionPersistence);
+        } catch (e) {
+          console.error("Critical: Auth persistence totally blocked", e);
+        }
+      }
+    };
+    initAuth();
+  }, []);
+
   // Listen to Firebase auth state
   useEffect(() => {
     // 1. Check for redirect results (Google login on mobile)
@@ -50,35 +89,38 @@ export const AuthProvider = ({ children }) => {
       if (res?.user) console.log("Redirect success for:", res.user.email);
     }).catch(err => console.error("Redirect error:", err));
 
-    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+    const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
       if (firebaseUser) {
-        // ... fetching profile ...
-        let profileData = {
-          uid: firebaseUser.uid,
-          name: firebaseUser.displayName || firebaseUser.email?.split('@')[0] || 'User',
-          email: firebaseUser.email,
-          avatar: firebaseUser.photoURL,
-        };
+        // 2. Proactive sync for new users
+        syncUserToFirestore(firebaseUser);
 
-        try {
-          const userRef = doc(db, 'users', firebaseUser.uid);
-          const snap = await getDoc(userRef);
-
+        // 3. LISTEN Real-time for profile changes
+        const userRef = doc(db, 'users', firebaseUser.uid);
+        const unsubProfile = onSnapshot(userRef, (snap) => {
           if (snap.exists()) {
-            profileData = { ...profileData, ...snap.data() };
+            setUser({
+              uid: firebaseUser.uid,
+              email: firebaseUser.email,
+              ...snap.data()
+            });
           } else {
-            // First time login - sync info
-            await syncUserToFirestore(firebaseUser);
+            // Initial signup sync
+            setUser({
+              uid: firebaseUser.uid,
+              name: firebaseUser.displayName || firebaseUser.email?.split('@')[0] || 'User',
+              email: firebaseUser.email,
+              avatar: firebaseUser.photoURL,
+            });
           }
-        } catch (err) {
-          console.error("Profile sync failed:", err);
-        }
+          setLoading(false);
+        });
 
-        setUser(profileData);
+        // Cleanup profile listener when auth changes
+        return () => unsubProfile();
       } else {
         setUser(null);
+        setLoading(false);
       }
-      setLoading(false);
     });
     return () => unsubscribe();
   }, []);

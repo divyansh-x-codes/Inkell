@@ -24,7 +24,7 @@ export default function Signup({ showToast }) {
       showToast(error.message || 'Signup failed');
     } else {
       showToast('Account created!');
-      navigate('/home');
+      navigate('/home', { replace: true });
     }
   };
 
@@ -37,7 +37,7 @@ export default function Signup({ showToast }) {
       showToast(error.message || 'Google signup failed');
     } else if (user) {
       showToast(`Welcome, ${user.displayName || 'User'}!`);
-      navigate('/home');
+      navigate('/home', { replace: true });
     }
     // If user is null but no error (isMobile redirect), the app will reload and 
     // PublicRoute/onAuthStateChanged will take over navigation.
