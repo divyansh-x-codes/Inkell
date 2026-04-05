@@ -5,6 +5,8 @@ import './chronicle.css'
 import App from './App.jsx'
 import { AuthProvider } from './context/AuthContext'
 
+import './bones/registry'
+
 createRoot(document.getElementById('root')).render(
   <StrictMode>
     <AuthProvider>

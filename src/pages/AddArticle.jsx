@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { createBlog, updateBlog, getBlog } from '../utils/firebaseData';
@@ -19,6 +19,7 @@ export default function AddArticle({ showToast }) {
   const [readTime, setReadTime] = useState('5 min read');
   const [publishing, setPublishing] = useState(false);
   const [fetching, setFetching] = useState(isEdit);
+  const bodyRef = useRef(null);
 
   // Load article if in edit mode
   useEffect(() => {
@@ -80,6 +81,50 @@ export default function AddArticle({ showToast }) {
     }
   };
 
+  // Handle real-time WYSIWYG input
+  const handleInput = (e) => {
+    setBody(e.target.innerHTML);
+  };
+
+  const applyFormat = (type, value = null) => {
+    const editor = bodyRef.current;
+    if (!editor) return;
+
+    // Ensure editor is focused
+    editor.focus();
+
+    switch (type) {
+      case 'bold':
+        document.execCommand('bold', false, null);
+        break;
+      case 'point':
+        document.execCommand('insertUnorderedList', false, null);
+        break;
+      case 'color':
+        document.execCommand('foreColor', false, value);
+        break;
+      case 'align':
+        if (value === 'center') document.execCommand('justifyCenter', false, null);
+        else document.execCommand('justifyLeft', false, null);
+        break;
+      default:
+        return;
+    }
+
+    // Sync state after format
+    setBody(editor.innerHTML);
+  };
+
+  // Initial content setup for edit mode
+  useEffect(() => {
+    if (!fetching && isEdit && bodyRef.current && body) {
+      // Only set once to prevent cursor jumping
+      if (!bodyRef.current.innerHTML) {
+        bodyRef.current.innerHTML = body;
+      }
+    }
+  }, [fetching, isEdit, body]);
+
   if (fetching) {
     return (
       <div style={{ background: '#0d0d0d', height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#666' }}>
@@ -89,7 +134,7 @@ export default function AddArticle({ showToast }) {
   }
 
   return (
-    <div className="view active" style={{ background: '#0d0d0d', minHeight: '100%' }}>
+    <div className="view active" style={{ background: '#0d0d0d', minHeight: '100%', position: 'relative' }}>
       {/* Header */}
       <div style={{
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
@@ -97,6 +142,7 @@ export default function AddArticle({ showToast }) {
         position: 'sticky', top: 0, background: '#0d0d0d', zIndex: 10,
       }}>
         <button
+          type="button"
           onClick={() => navigate(-1)}
           style={{ background: 'none', border: 'none', color: '#888', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.9rem' }}
         >
@@ -109,6 +155,7 @@ export default function AddArticle({ showToast }) {
           {isEdit ? 'Edit Article' : 'New Article'}
         </div>
         <button
+          type="button"
           onClick={handleAction}
           disabled={publishing || !title.trim() || !body.trim()}
           style={{
@@ -124,8 +171,8 @@ export default function AddArticle({ showToast }) {
         </button>
       </div>
 
-      {/* Form */}
-      <div style={{ padding: '20px 16px', overflowY: 'auto', paddingBottom: 60 }}>
+      {/* Form Content (Scrollable) */}
+      <div className="article-form-scroll" style={{ padding: '20px 16px', overflowY: 'auto', height: 'calc(100vh - 120px)', paddingBottom: 100 }}>
 
         {/* Category selector */}
         <div style={{ marginBottom: 16 }}>
@@ -133,6 +180,7 @@ export default function AddArticle({ showToast }) {
             {CATEGORIES.map(cat => (
               <button
                 key={cat}
+                type="button"
                 onClick={() => setCategory(cat)}
                 style={{
                   flexShrink: 0, padding: '5px 14px', borderRadius: 20,
@@ -224,22 +272,16 @@ export default function AddArticle({ showToast }) {
 
         <div style={{ height: 1, background: '#1a1a1a', margin: '16px 0' }}></div>
 
-        {/* Body */}
+        {/* Real-time Visual Editor */}
         <div style={{ fontSize: '0.75rem', color: '#555', marginBottom: 10, textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 600 }}>
           Article Body
         </div>
-        <textarea
-          placeholder="Write your article here... (supports plain text)"
-          value={body}
-          onChange={e => setBody(e.target.value)}
-          rows={18}
-          style={{
-            width: '100%', background: 'none', border: '1px solid #1a1a1a',
-            borderRadius: 8, outline: 'none', color: '#ccc',
-            fontSize: '0.97rem', fontFamily: "'DM Sans', sans-serif",
-            resize: 'vertical', lineHeight: 1.8, padding: '14px',
-            boxSizing: 'border-box',
-          }}
+        <div
+          ref={bodyRef}
+          contentEditable
+          data-placeholder="Start writing your masterpiece here..."
+          onInput={handleInput}
+          className="rich-editor"
         />
 
         {/* Author info */}
@@ -253,6 +295,42 @@ export default function AddArticle({ showToast }) {
             </div>
             <div style={{ color: '#555', fontSize: '0.78rem' }}>Publishing as this author</div>
           </div>
+        </div>
+      </div>
+
+      {/* FIXED Formatting Toolkit (Docked at bottom) */}
+      <div className="formatting-toolkit">
+        <div className="tk-group">
+          <button type="button" className="tk-btn" onClick={() => applyFormat('bold')} title="Bold">
+            <strong>B</strong>
+          </button>
+          <button type="button" className="tk-btn" onClick={() => applyFormat('point')} title="Bullet List">
+            ●
+          </button>
+        </div>
+
+        <div className="tk-divider"></div>
+
+        <div className="tk-group">
+          <select className="tk-select" onChange={(e) => applyFormat('color', e.target.value)} value="">
+            <option value="" disabled>Color</option>
+            <option value="#ff4d4f" style={{ color: '#ff4d4f' }}>Red</option>
+            <option value="#60c1fb" style={{ color: '#60c1fb' }}>Blue</option>
+            <option value="#1a9e6e" style={{ color: '#1a9e6e' }}>Green</option>
+            <option value="#ebac00" style={{ color: '#ebac00' }}>Gold</option>
+            <option value="#ffffff" style={{ color: '#ffffff' }}>White</option>
+          </select>
+        </div>
+
+        <div className="tk-divider"></div>
+
+        <div className="tk-group">
+          <button type="button" className="tk-btn" onClick={() => applyFormat('align', 'left')} title="Align Left">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="17" y1="10" x2="3" y2="10"></line><line x1="21" y1="6" x2="3" y2="6"></line><line x1="21" y1="14" x2="3" y2="14"></line><line x1="17" y1="18" x2="3" y2="18"></line></svg>
+          </button>
+          <button type="button" className="tk-btn" onClick={() => applyFormat('align', 'center')} title="Align Center">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="10" x2="6" y2="10"></line><line x1="21" y1="6" x2="3" y2="6"></line><line x1="21" y1="14" x2="3" y2="14"></line><line x1="18" y1="18" x2="6" y2="18"></line></svg>
+          </button>
         </div>
       </div>
     </div>

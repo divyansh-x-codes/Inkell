@@ -1,5 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import rehypeRaw from 'rehype-raw';
 import { articles as mockArticles } from '../data';
 import BottomNav from '../components/BottomNav';
 import { useAuth } from '../context/AuthContext';
@@ -8,10 +11,10 @@ import { doc, onSnapshot } from 'firebase/firestore';
 import {
   toggleLike,
   toggleSave,
-  isBlogLiked,
   isBlogSaved,
   subscribeToLikesCount,
-  subscribeToUserLike
+  subscribeToUserLike,
+  deleteBlog
 } from '../utils/firebaseData';
 
 function Poll({ poll, showToast }) {
@@ -51,6 +54,19 @@ export default function Reader({ showToast }) {
   const [liked, setLiked] = useState(false);
   const [saved, setSaved] = useState(false);
   const [likesCount, setLikesCount] = useState(0);
+  const [showMenu, setShowMenu] = useState(false);
+
+  const handleDeleteBlog = async () => {
+    if (window.confirm("Are you sure you want to delete this blog? This action cannot be undone.")) {
+      const result = await deleteBlog(id);
+      if (result.error) {
+        showToast("Failed to delete blog");
+      } else {
+        showToast("Blog deleted successfully!");
+        navigate('/home');
+      }
+    }
+  };
 
   // 1. Real-time article data subscription (Comments/Content)
   useEffect(() => {
@@ -144,20 +160,20 @@ export default function Reader({ showToast }) {
   };
 
   if (loading && !article) return (
-    <div style={{ background: '#121212', height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#666' }}>
+    <div style={{ background: 'var(--paper-bg)', height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-ink-muted)', fontFamily: "'DM Sans', sans-serif" }}>
       Loading story...
     </div>
   );
 
   if (!article) return (
-    <div style={{ background: '#121212', height: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '40px', textAlign: 'center' }}>
+    <div style={{ background: 'var(--paper-bg)', height: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '40px', textAlign: 'center' }}>
       <div style={{ fontSize: '3rem', marginBottom: '20px' }}>📄🚫</div>
-      <h2 style={{ color: 'white', marginBottom: '12px' }}>Article not found</h2>
-      <p style={{ color: '#666', marginBottom: '32px' }}>This story might have been removed or the link is incorrect.</p>
+      <h2 style={{ color: 'var(--text-ink)', marginBottom: '12px', fontFamily: "'Playfair Display', serif" }}>Article not found</h2>
+      <p style={{ color: 'var(--text-ink-muted)', marginBottom: '32px', fontFamily: "'DM Sans', sans-serif" }}>This story might have been removed or the link is incorrect.</p>
       <button
         onClick={() => navigate('/')}
         style={{
-          background: 'var(--orange)', color: 'white', border: 'none',
+          background: 'var(--brand-red)', color: 'white', border: 'none',
           padding: '14px 28px', borderRadius: '12px', fontWeight: 700,
           cursor: 'pointer', fontFamily: "'DM Sans', sans-serif"
         }}
@@ -179,8 +195,8 @@ export default function Reader({ showToast }) {
   };
 
   return (
-    <div className="view active reader-page">
-      <div className="app-shell" style={{ background: '#121212', position: 'relative' }}>
+    <div className="view active reader-page reader-paper-mode">
+      <div className="app-shell" style={{ background: 'var(--paper-bg)', position: 'relative' }}>
 
         <div className="reader-topbar">
           <button className="tb-circle-btn" onClick={() => navigate(-1)}>
@@ -201,13 +217,45 @@ export default function Reader({ showToast }) {
                 </svg>
               </button>
             )}
-            <button className="tb-circle-btn" onClick={() => showToast('Options')}>
-              <svg viewBox="0 0 24 24" fill="currentColor">
-                <circle cx="5" cy="12" r="1.5"></circle>
-                <circle cx="12" cy="12" r="1.5"></circle>
-                <circle cx="19" cy="12" r="1.5"></circle>
-              </svg>
-            </button>
+            <div style={{ position: 'relative' }}>
+              <button className="tb-circle-btn" onClick={() => setShowMenu(!showMenu)}>
+                <svg viewBox="0 0 24 24" fill="currentColor">
+                  <circle cx="5" cy="12" r="1.5"></circle>
+                  <circle cx="12" cy="12" r="1.5"></circle>
+                  <circle cx="19" cy="12" r="1.5"></circle>
+                </svg>
+              </button>
+
+              {showMenu && (
+                <div style={{
+                  position: 'absolute', right: 0, top: 48, background: '#fff',
+                  border: '1px solid rgba(0,0,0,0.12)', borderRadius: 12, padding: '4px 0',
+                  boxShadow: '0 8px 24px rgba(0,0,0,0.12)', minWidth: 160, zIndex: 100
+                }}>
+                  <div
+                    onClick={() => {
+                      navigator.clipboard.writeText(window.location.href);
+                      showToast('Link copied!');
+                      setShowMenu(false);
+                    }}
+                    style={{ padding: '12px 20px', color: 'var(--text-ink)', fontWeight: 500, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" }}
+                  >
+                    Copy Link
+                  </div>
+                  {user && article && user.uid === article.authorId && (
+                    <div
+                      onClick={() => {
+                        setShowMenu(false);
+                        handleDeleteBlog();
+                      }}
+                      style={{ padding: '12px 20px', color: '#c0392b', fontWeight: 600, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", borderTop: '1px solid rgba(0,0,0,0.08)' }}
+                    >
+                      Delete Blog
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
@@ -232,7 +280,11 @@ export default function Reader({ showToast }) {
 
           <div className="reader-body">
             {(article.coverImage || article.cover_image) && <img src={article.coverImage || article.cover_image} className="reader-hero-img" alt="cover" />}
-            <div style={{ whiteSpace: 'pre-wrap', lineHeight: 1.8, color: '#ccc', paddingBottom: '120px' }}>{article.content || article.body || ''}</div>
+            <div className="inkwell-article">
+              <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>
+                {article.content || article.body || ''}
+              </ReactMarkdown>
+            </div>
           </div>
         </div>
 

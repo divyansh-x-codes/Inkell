@@ -150,6 +150,19 @@ export const unfollowAuthor = async (currentUserId, authorId) => {
   } catch (error) { return { error }; }
 };
 
+export const subscribeToFollowingStatus = (userId, authorId, setSubscribed) => {
+  if (!userId || !authorId) return;
+  const q = doc(db, FOLLOWS_COL, userId);
+  return onSnapshot(q, (snap) => {
+    if (snap.exists()) {
+      const following = snap.data().following || [];
+      setSubscribed(following.includes(authorId));
+    } else {
+      setSubscribed(false);
+    }
+  });
+};
+
 export const getFollowing = async (userId) => {
   try {
     const snap = await getDoc(doc(db, FOLLOWS_COL, userId));
@@ -170,6 +183,28 @@ export const subscribeToFollowedBlogs = (userId, setBlogs) => {
     );
     onSnapshot(q, (snapshot) => {
       setBlogs(snapshot.docs.map((d) => ({ id: d.id, ...d.data() })));
+    });
+  });
+};
+
+export const subscribeToFollowedUsers = (userId, setFollowedUsers) => {
+  // 1. Get the list of UIDs the user follows
+  const q = query(doc(db, FOLLOWS_COL, userId));
+  return onSnapshot(q, async (snap) => {
+    if (!snap.exists()) {
+      setFollowedUsers([]);
+      return;
+    }
+    const followingIds = snap.data().following || [];
+    if (!followingIds.length) {
+      setFollowedUsers([]);
+      return;
+    }
+
+    // 2. Fetch user profiles for these UIDs
+    const usersQ = query(collection(db, USERS_COL), where("__name__", "in", followingIds.slice(0, 30)));
+    onSnapshot(usersQ, (uSnap) => {
+      setFollowedUsers(uSnap.docs.map(d => ({ id: d.id, ...d.data() })));
     });
   });
 };
@@ -386,11 +421,11 @@ export const sendMessage = async (convoId, sender, text, receiver) => {
       participantInfo: {
         [sender.uid]: {
           name: sender.displayName || sender.name || "User",
-          avatar: sender.photoURL || sender.avatar || null
+          avatar: sender.photoURL || sender.avatar || sender.profilePic || null
         },
         [receiver.id]: {
           name: receiver.name || receiver.displayName || "User",
-          avatar: receiver.avatar || receiver.photoURL || null
+          avatar: receiver.avatar || receiver.photoURL || receiver.profilePic || null
         }
       },
       lastMessage: text,

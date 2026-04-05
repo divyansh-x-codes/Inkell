@@ -15,6 +15,7 @@ import MyProfile from './pages/MyProfile';
 import EditProfile from './pages/EditProfile';
 import Saved from './pages/Saved';
 import AddArticle from './pages/AddArticle';
+import BlogPage from './pages/BlogPage';
 
 import { useAuth } from "./context/AuthContext";
 
@@ -66,6 +67,7 @@ function App() {
         <div className="screen">
           <Routes>
             <Route path="/" element={<PublicRoute><Welcome /></PublicRoute>} />
+            <Route path="/blog-test" element={<BlogPage />} />
             <Route path="/login" element={<PublicRoute><Login showToast={showToast} /></PublicRoute>} />
             <Route path="/signup" element={<PublicRoute><Signup showToast={showToast} /></PublicRoute>} />
 

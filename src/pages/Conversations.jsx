@@ -26,8 +26,10 @@ export default function Conversations({ showToast }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [userResults, setUserResults] = useState([]);
   const [isSearching, setIsSearching] = useState(false);
+  const [isVisible, setIsVisible] = useState(true);
+  const [lastScrollY, setLastScrollY] = useState(0);
+  const [brokenImages, setBrokenImages] = useState({});
 
-  // 1. Subscribe to existing conversations
   useEffect(() => {
     if (!user?.uid) {
       setLoading(false);
@@ -37,34 +39,29 @@ export default function Conversations({ showToast }) {
       setConversations(data);
       setLoading(false);
     });
-    // Add a small safety timeout to clear loading if Firestore hangs
     const safety = setTimeout(() => setLoading(false), 3000);
-
     return () => {
       unsubscribe();
       clearTimeout(safety);
     };
   }, [user]);
 
-  // 2. Handle user search for starting NEW chats
   useEffect(() => {
     const delayDebounceFn = setTimeout(async () => {
       if (searchQuery.length > 1) {
         setIsSearching(true);
         const results = await searchUsersByName(searchQuery);
-        // Exclude the current user from search
         setUserResults(results.filter(u => u.uid !== user?.uid));
         setIsSearching(false);
       } else {
         setUserResults([]);
       }
     }, 400);
-
     return () => clearTimeout(delayDebounceFn);
   }, [searchQuery, user]);
 
   const getTimeAgo = (timestamp) => {
-    if (!timestamp) return '...';
+    if (!timestamp) return '';
     try {
       const date = timestamp.toDate();
       const diff = Date.now() - date.getTime();
@@ -74,7 +71,22 @@ export default function Conversations({ showToast }) {
       const hrs = Math.floor(mins / 60);
       if (hrs < 24) return `${hrs}h`;
       return `${Math.floor(hrs / 24)}d`;
-    } catch { return '...'; }
+    } catch { return ''; }
+  };
+
+  const handleImageError = (id) => {
+    setBrokenImages(prev => ({ ...prev, [id]: true }));
+  };
+
+  const openThread = (conv, otherId, otherInfo) => {
+    if (user?.uid) clearUserUnread(conv.id, user.uid);
+    navigate(`/chat/${conv.id}`, {
+      state: {
+        recipientUserId: otherId,
+        recipientName: otherInfo.name,
+        recipientAvatar: otherInfo.avatar
+      }
+    });
   };
 
   const startNewChat = (recipient) => {
@@ -89,133 +101,136 @@ export default function Conversations({ showToast }) {
     });
   };
 
-  const openThread = (conv, otherId, otherInfo) => {
-    // Clear server-side unread count when entering thread
-    if (user?.uid) clearUserUnread(conv.id, user.uid);
-    navigate(`/chat/${conv.id}`, {
-      state: {
-        recipientUserId: otherId,
-        recipientName: otherInfo.name,
-        recipientAvatar: otherInfo.avatar
+  // Scroll logic for Topbar visibility
+  useEffect(() => {
+    const handleScroll = () => {
+      const currentScrollY = window.scrollY;
+      if (currentScrollY < 10) {
+        setIsVisible(true);
+      } else if (currentScrollY > lastScrollY) {
+        if (isVisible) setIsVisible(false);
+      } else {
+        if (!isVisible) setIsVisible(true);
       }
-    });
-  };
+      setLastScrollY(currentScrollY);
+    };
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, [lastScrollY, isVisible]);
 
   return (
-    <div className="conv-page app-shell">
-      <div className="conv-header">
-        <h1 className="conv-title">Messages</h1>
-        <button className="tb-circle-btn" onClick={() => navigate('/search')} title="Find Creators">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <path d="M12 20h9"></path>
-            <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path>
-          </svg>
-        </button>
-      </div>
-
-      <div className="conv-search-wrap">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-          <circle cx="11" cy="11" r="8"></circle>
-          <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-        </svg>
-        <input
-          className="conv-search-input"
-          placeholder="Search people or messages…"
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-        />
-      </div>
-
-      <div className="conv-list">
-        {!user ? (
-          <div style={{ padding: '80px 20px', textAlign: 'center', color: '#555' }}>
-            <div style={{ fontSize: '2rem', marginBottom: 16 }}>🔒</div>
-            <div style={{ fontWeight: 600, color: 'white', marginBottom: 8 }}>Please Login</div>
-            <p style={{ fontSize: '0.85rem' }}>Login to see your real-time private messages.</p>
-            <button className="saved-browse-btn" style={{ marginTop: 20 }} onClick={() => navigate('/login')}>Log in</button>
+    <div className="conv-page view active">
+      <div className="app-shell">
+        <div className={`chronicle-topbar premium ${!isVisible ? 'hidden' : ''}`}>
+          <div className="topbar-left">
+            <h1 className="nav-title">Messages</h1>
           </div>
-        ) : searchQuery.length > 1 ? (
-          <div className="new-chat-results">
-            <div className="search-section-label">People</div>
-            {isSearching ? (
-              <div style={{ padding: 20, textAlign: 'center', color: 'gray' }}>Searching...</div>
-            ) : userResults.length === 0 ? (
-              <div style={{ padding: 20, textAlign: 'center', color: 'gray' }}>No people found</div>
-            ) : (
-              userResults.map(p => (
-                <div key={p.uid} className="conv-item animate-in" onClick={() => startNewChat(p)}>
-                  <div className="conv-avatar-wrap">
-                    {p.avatar
-                      ? <img src={p.avatar} alt={p.name} className="conv-avatar-img" />
-                      : <div className="conv-avatar-letter" style={{ background: colorForName(p.name) }}>{getInitials(p.name)}</div>
-                    }
-                  </div>
-                  <div className="conv-content">
-                    <div className="conv-name">{p.name}</div>
-                    <p className="conv-preview">Click to send a message</p>
-                  </div>
-                </div>
-              ))
-            )}
+          <div className="topbar-actions">
+            <button className="tb-action-btn" onClick={() => navigate('/add-article')}>
+              <svg viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" style={{ width: 22, height: 22 }}>
+                <path d="M12 20h9"></path>
+                <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path>
+              </svg>
+            </button>
           </div>
-        ) : loading ? (
-          <div style={{ textAlign: 'center', padding: '60px', color: '#555' }}>🔄 Loading chats...</div>
-        ) : conversations.length === 0 ? (
-          <div style={{ textAlign: 'center', padding: '80px 20px', color: '#555' }}>
-             <div style={{ fontSize: '2rem', marginBottom: 16 }}>💬</div>
-             <div style={{ fontWeight: 600, color: 'white', marginBottom: 8 }}>No messages yet</div>
-             <p style={{ fontSize: '0.85rem' }}>Find a creator to start a conversation.</p>
-             <button className="saved-browse-btn" style={{ marginTop: 20 }} onClick={() => navigate('/search')}>Browse Authors</button>
-          </div>
-        ) : (
-          conversations.map(conv => {
-            const otherId = conv.participants.find(id => id !== user.uid);
-            const otherInfo = conv.participantInfo?.[otherId] || { name: 'User', avatar: null };
-            const myUnread = conv.unreadCount?.[user.uid] || 0;
+        </div>
 
-            return (
-              <div
-                key={conv.id}
-                className="conv-item"
-                onClick={() => openThread(conv, otherId, otherInfo)}
-              >
-                <div className="conv-avatar-wrap">
-                  {otherInfo.avatar
-                    ? <img src={otherInfo.avatar} alt={otherInfo.name} className="conv-avatar-img" />
-                    : <div className="conv-avatar-letter" style={{ background: colorForName(otherInfo.name) }}>{getInitials(otherInfo.name)}</div>
-                  }
-                </div>
-                <div className="conv-content">
-                  <div className="conv-top-row">
-                    <span className="conv-name" style={{ fontWeight: myUnread > 0 ? 700 : 500 }}>{otherInfo.name}</span>
-                    <span className="conv-time">{getTimeAgo(conv.lastMessageTime)}</span>
-                  </div>
-                  <p className="conv-preview" style={{
-                    color: myUnread > 0 ? 'var(--white)' : (conv.lastSenderId !== user.uid ? 'var(--white)' : 'var(--gray)'),
-                    fontWeight: myUnread > 0 ? 600 : 400
-                  }}>
-                    {conv.lastSenderId === user.uid ? `You: ${conv.lastMessage}` : conv.lastMessage}
-                  </p>
-                </div>
-                {myUnread > 0 && (
-                  <div style={{
-                    minWidth: 20, height: 20, borderRadius: 10,
-                    background: '#e85d04', color: 'white',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    fontSize: '0.7rem', fontWeight: 800, flexShrink: 0,
-                    fontFamily: "'DM Sans', sans-serif",
-                    padding: '0 5px',
-                  }}>
-                    {myUnread > 9 ? '9+' : myUnread}
-                  </div>
+        <div className="conv-content-scroll">
+          <div className="conv-search-container">
+            <div className="conv-search-bar">
+              <svg viewBox="0 0 24 24" fill="none" stroke="var(--gray)" strokeWidth="2.5">
+                <circle cx="11" cy="11" r="8"></circle>
+                <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+              </svg>
+              <input
+                placeholder="Search people or messages…"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+              />
+            </div>
+          </div>
+
+          <div className="conv-list-area">
+            {!user ? (
+              <div className="conv-empty-state">
+                <div className="empty-icon">🔒</div>
+                <h3>Please login to chat</h3>
+                <button className="premium-action-btn" onClick={() => navigate('/login')}>Login</button>
+              </div>
+            ) : searchQuery.length > 1 ? (
+              <div className="conv-search-results">
+                <div className="section-label">People</div>
+                {isSearching ? (
+                  <div className="conv-list-status">Searching...</div>
+                ) : userResults.length === 0 ? (
+                  <div className="conv-list-status">No people found</div>
+                ) : (
+                  userResults.map(p => (
+                    <div key={p.uid} className="conv-item premium-hover" onClick={() => startNewChat(p)}>
+                      <div className="conv-avatar">
+                        {(p.avatar || p.photoURL || p.profilePic) && !brokenImages[p.uid] ? (
+                          <img src={p.avatar || p.photoURL || p.profilePic} alt="P" onError={() => handleImageError(p.uid)} />
+                        ) : (
+                          <div className="conv-initials" style={{ background: colorForName(p.name) }}>{getInitials(p.name)}</div>
+                        )}
+                      </div>
+                      <div className="conv-text">
+                        <div className="conv-row">
+                          <span className="conv-name">{p.name || 'User'}</span>
+                        </div>
+                        <p className="conv-preview">Start a new conversation</p>
+                      </div>
+                    </div>
+                  ))
                 )}
               </div>
-            );
-          })
-        )}
-      </div>
+            ) : loading ? (
+              <div className="conv-list-status">Loading your chats...</div>
+            ) : conversations.length === 0 ? (
+              <div className="conv-empty-state">
+                <div className="empty-icon">💬</div>
+                <h3>No messages yet</h3>
+                <p>Chat with your favorite authors and readers.</p>
+                <button className="premium-action-btn" onClick={() => navigate('/search')}>Browse Authors</button>
+              </div>
+            ) : (
+              conversations.map(conv => {
+                const otherId = conv.participants.find(id => id !== user.uid);
+                const otherInfo = conv.participantInfo?.[otherId] || { name: 'User', avatar: null };
+                const myUnread = conv.unreadCount?.[user.uid] || 0;
+                const isBroken = brokenImages[conv.id];
 
-      <BottomNav showToast={showToast} />
+                return (
+                  <div key={conv.id} className="conv-item premium-hover" onClick={() => openThread(conv, otherId, otherInfo)}>
+                    <div className="conv-avatar">
+                      {(otherInfo.avatar || otherInfo.photoURL || otherInfo.profilePic) && !isBroken ? (
+                        <img src={otherInfo.avatar || otherInfo.photoURL || otherInfo.profilePic} alt="A" onError={() => handleImageError(conv.id)} />
+                      ) : (
+                        <div className="conv-initials" style={{ background: colorForName(otherInfo.name) }}>{getInitials(otherInfo.name)}</div>
+                      )}
+                      {myUnread > 0 && <div className="unread-dot"></div>}
+                    </div>
+                    <div className="conv-text">
+                      <div className="conv-row">
+                        <span className="conv-name" style={{ fontWeight: myUnread > 0 ? 700 : 600 }}>{otherInfo.name}</span>
+                        <span className="conv-time">{getTimeAgo(conv.lastMessageTime)}</span>
+                      </div>
+                      <div className="conv-preview-row">
+                        <p className="conv-preview" style={{ color: myUnread > 0 ? 'var(--white)' : 'var(--gray)' }}>
+                          {conv.lastSenderId === user.uid ? `You: ${conv.lastMessage}` : conv.lastMessage}
+                        </p>
+                        {myUnread > 0 && <div className="unread-count">{myUnread > 9 ? '9+' : myUnread}</div>}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </div>
+
+        <BottomNav showToast={showToast} currentPath="/conversations" />
+      </div>
     </div>
   );
 }
