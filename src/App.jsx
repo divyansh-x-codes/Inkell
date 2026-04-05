@@ -19,20 +19,47 @@ import BlogPage from './pages/BlogPage';
 
 import { useAuth } from "./context/AuthContext";
 
-const LoadingScreen = () => (
-  <div style={{
-    height: '100vh',
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    justifyContent: 'center',
-    background: 'var(--bg)',
-    color: 'var(--white)'
-  }}>
-    <div className="logo-mark" style={{ marginBottom: 20 }}></div>
-    <div style={{ fontSize: '0.9rem', opacity: 0.6 }}>Syncing your session...</div>
-  </div>
-);
+const LoadingScreen = () => {
+  const [showHint, setShowHint] = useState(false);
+
+  useEffect(() => {
+    const t = setTimeout(() => setShowHint(true), 5000);
+    return () => clearTimeout(t);
+  }, []);
+
+  return (
+    <div style={{
+      height: '100vh',
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'center',
+      justifyContent: 'center',
+      background: 'var(--bg)', // Use app theme color instead of literal black
+      color: '#ffffff',
+      fontFamily: 'Inter, sans-serif',
+      position: 'relative',
+      zIndex: 9999
+    }}>
+      <div className="premium-loader">
+        <div className="logo-mark" style={{ width: 60, height: 60, marginBottom: 20 }}></div>
+      </div>
+      <div style={{ 
+        fontSize: '1.2rem', 
+        fontWeight: 600, 
+        letterSpacing: '0.1rem',
+        marginBottom: 8,
+        background: 'linear-gradient(90deg, #fff, #888, #fff)',
+        WebkitBackgroundClip: 'text',
+        WebkitTextFillColor: 'transparent',
+        backgroundSize: '200% 100%',
+        animation: 'shimmer 2s infinite linear'
+      }}>INKWELL</div>
+      <div style={{ fontSize: '0.8rem', opacity: 0.4, fontWeight: 400 }}>
+        {showHint ? 'Taking longer than usual... Check your connection' : 'Connecting to your feed...'}
+      </div>
+    </div>
+  );
+};
 
 const ProtectedRoute = ({ children }) => {
   const { user, loading } = useAuth();

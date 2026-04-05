@@ -16,9 +16,4 @@ const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 export const db = getFirestore(app);
 
-// ── Explicitly persist the session to localStorage (survives refresh/tab close) ──
-setPersistence(auth, browserLocalPersistence).catch((err) => {
-  console.error("Auth persistence error:", err);
-});
-
 export default app;

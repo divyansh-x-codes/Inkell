@@ -14,7 +14,7 @@ import {
   signInWithEmailAndPassword,
   signOut as firebaseSignOut,
 } from 'firebase/auth';
-import { doc, setDoc, getDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, setDoc, getDoc, onSnapshot, serverTimestamp } from 'firebase/firestore';
 import { subscribeToConversations } from '../utils/firebaseData';
 
 // Safe Storage Wrapper (BEST FIX)
@@ -89,22 +89,16 @@ export const AuthProvider = ({ children }) => {
       if (res?.user) console.log("Redirect success for:", res.user.email);
     }).catch(err => console.error("Redirect error:", err));
 
-    const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
+    const unsubscribeAuth = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
-        // 2. Proactive sync for new users
-        syncUserToFirestore(firebaseUser);
-
-        // 3. LISTEN Real-time for profile changes
+        safeStorage.set('inkwell_logged_in', 'true');
         const userRef = doc(db, 'users', firebaseUser.uid);
-        const unsubProfile = onSnapshot(userRef, (snap) => {
+        try {
+          const snap = await getDoc(userRef);
           if (snap.exists()) {
-            setUser({
-              uid: firebaseUser.uid,
-              email: firebaseUser.email,
-              ...snap.data()
-            });
+            setUser({ uid: firebaseUser.uid, email: firebaseUser.email, ...snap.data() });
           } else {
-            // Initial signup sync
+            await syncUserToFirestore(firebaseUser);
             setUser({
               uid: firebaseUser.uid,
               name: firebaseUser.displayName || firebaseUser.email?.split('@')[0] || 'User',
@@ -112,18 +106,54 @@ export const AuthProvider = ({ children }) => {
               avatar: firebaseUser.photoURL,
             });
           }
+        } catch (err) {
+          console.error("Initial profile fetch failed:", err);
+          setUser({ uid: firebaseUser.uid, email: firebaseUser.email });
+        } finally {
           setLoading(false);
-        });
-
-        // Cleanup profile listener when auth changes
-        return () => unsubProfile();
+        }
       } else {
+        safeStorage.set('inkwell_logged_in', 'false');
         setUser(null);
         setLoading(false);
       }
     });
-    return () => unsubscribe();
+
+    // ─── INSTANT-UNLOCK FAIL-SAFE (Crucial for PC/Slow handshakes) ───
+    // If we have a hint that we're logged in, or if it's been 2s, just UNLOCK.
+    // Auth state will update in the background.
+    const hasSessionHint = safeStorage.get('inkwell_logged_in') === 'true';
+    const timer = setTimeout(() => {
+      setLoading(prev => {
+        if (prev) console.warn("AuthProvider: Fail-Safe Unlocked");
+        return false;
+      });
+    }, hasSessionHint ? 800 : 2500);
+
+    return () => {
+      unsubscribeAuth();
+      clearTimeout(timer);
+    };
   }, []);
+
+  // ── BACKGROUND Listen Real-time for profile changes (Silent sync) ──
+  useEffect(() => {
+    if (!user?.uid) return;
+    const userRef = doc(db, 'users', user.uid);
+    const unsubProfile = onSnapshot(userRef, (snap) => {
+      if (snap.exists()) {
+        const data = snap.data();
+        setUser((prev) => {
+          if (!prev) return { uid: user.uid, ...data };
+          // Prevent infinite loop
+          if (JSON.stringify(prev) === JSON.stringify({ ...prev, ...data })) return prev;
+          return { ...prev, ...data };
+        });
+      }
+    }, (err) => console.warn("Background profile sync failed:", err));
+
+    return () => unsubProfile();
+  }, [user?.uid]);
 
   // ── Global real-time unread counter ────────────────────────────────
   useEffect(() => {
@@ -198,7 +228,7 @@ export const AuthProvider = ({ children }) => {
 
   return (
     <AuthContext.Provider value={{ user, loading, unreadCount, signUp, logIn, loginWithGoogle, signIn, signOut }}>
-      {!loading && children}
+      {children}
     </AuthContext.Provider>
   );
 };
