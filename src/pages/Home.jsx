@@ -46,10 +46,7 @@ function FollowingBar({ userId, navigate }) {
         
         <div className="story-item add-more" onClick={() => navigate('/search')}>
           <div className="story-avatar plus-btn">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-              <line x1="12" y1="5" x2="12" y2="19"></line>
-              <line x1="5" y1="12" x2="19" y2="12"></line>
-            </svg>
+            <img src="/icons8-plus-96.png" alt="add" style={{ width: 32, height: 32, opacity: 0.8 }} />
           </div>
           <div className="story-name">Add more</div>
         </div>
@@ -110,9 +107,7 @@ export default function Home({ showToast }) {
         <div className={`chronicle-topbar premium ${!isVisible ? 'hidden' : ''}`}>
           <div className="topbar-left">
             <div className="brand-logo" onClick={() => navigate('/')}>
-              <svg viewBox="0 0 24 24" fill="var(--orange)" style={{ width: 26, height: 26 }}>
-                <path d="M4 4h16v3H4zM4 10h16v7l-8 4-8-4v-7z" />
-              </svg>
+              <img src="/logo.png" alt="logo" style={{ width: 50, height: 50, borderRadius: 4 }} />
               <svg viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" style={{ width: 14, height: 14, marginLeft: -4 }}>
                 <polyline points="6 9 12 15 18 9"></polyline>
               </svg>
@@ -120,27 +115,8 @@ export default function Home({ showToast }) {
           </div>
 
           <div className="topbar-actions">
-            <button className="tb-action-btn" onClick={() => navigate('/add-article')}>
-              <svg viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" style={{ width: 22, height: 22 }}>
-                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
-                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
-              </svg>
-            </button>
-            <button className="tb-action-btn" onClick={() => navigate('/search')}>
-              <svg viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.2">
-                <circle cx="11" cy="11" r="8"></circle>
-                <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-              </svg>
-            </button>
-            <button className="tb-action-btn" onClick={() => navigate('/conversations')}>
-              <svg viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.2">
-                <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
-                <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
-              </svg>
-              {unreadCount > 0 && <div className="tb-dot"></div>}
-            </button>
             <div className="tb-avatar" onClick={() => navigate('/my-profile')}>
-              {displayAvatar ? <img src={displayAvatar} alt="me" /> : <span>{getInitials(displayName)}</span>}
+              {displayAvatar ? <img src={displayAvatar} alt="av" /> : <div className="sc-initials" style={{ background: '#cc4400' }}>{getInitials(displayName)}</div>}
             </div>
           </div>
         </div>
@@ -165,14 +141,6 @@ export default function Home({ showToast }) {
         </div>
 
         <BottomNav showToast={showToast} currentPath="/home" />
-        
-        {/* Floating Action Button (FAB) for adding articles */}
-        <button className="fab-add" onClick={() => navigate('/add-article')}>
-          <svg viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3">
-            <line x1="12" y1="5" x2="12" y2="19"></line>
-            <line x1="5" y1="12" x2="19" y2="12"></line>
-          </svg>
-        </button>
       </div>
     </div>
   );

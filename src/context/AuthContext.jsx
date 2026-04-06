@@ -89,9 +89,16 @@ export const AuthProvider = ({ children }) => {
       if (res?.user) console.log("Redirect success for:", res.user.email);
     }).catch(err => console.error("Redirect error:", err));
 
+    // ─── SESSION-HINT SHIELD ────────────────────────
+    // If we think the user is logged in, we SHIELD the null answer from Firebase
+    // for at least 1-2 seconds to give it time to find the session.
+    const hasSessionHint = safeStorage.get('inktrix_logged_in') === 'true';
+    let shieldTimer = null;
+
     const unsubscribeAuth = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
-        safeStorage.set('inkwell_logged_in', 'true');
+        if (shieldTimer) clearTimeout(shieldTimer); // Cancel shield early
+        safeStorage.set('inktrix_logged_in', 'true');
         const userRef = doc(db, 'users', firebaseUser.uid);
         try {
           const snap = await getDoc(userRef);
@@ -109,30 +116,42 @@ export const AuthProvider = ({ children }) => {
         } catch (err) {
           console.error("Initial profile fetch failed:", err);
           setUser({ uid: firebaseUser.uid, email: firebaseUser.email });
-        } finally {
-          setLoading(false);
         }
+        setLoading(false); // 🔥 UNLOCK IMMEDIATELY (We have a user)
       } else {
-        safeStorage.set('inkwell_logged_in', 'false');
-        setUser(null);
-        setLoading(false);
+        // 🔥 NULL USER (LOGGED OUT) 🔥
+        // If we have a hint, we wait for a bit before accepting the 'null'.
+        if (hasSessionHint) {
+          if (!shieldTimer) {
+            shieldTimer = setTimeout(() => {
+              safeStorage.set('inktrix_logged_in', 'false');
+              setUser(null);
+              setLoading(false); // 🚨 UNLOCK AFTER SHIELD EXPIRES
+            }, 2000); // 2s Grace Period for session retrieval
+          }
+        } else {
+          safeStorage.set('inktrix_logged_in', 'false');
+          setUser(null);
+          setLoading(false); // 🚨 UNLOCK IMMEDIATELY (No hint)
+        }
       }
     });
 
-    // ─── INSTANT-UNLOCK FAIL-SAFE (Crucial for PC/Slow handshakes) ───
-    // If we have a hint that we're logged in, or if it's been 2s, just UNLOCK.
-    // Auth state will update in the background.
-    const hasSessionHint = safeStorage.get('inkwell_logged_in') === 'true';
+    // ─── HARD FAIL-SAFE (STRICT 5s) ───
     const timer = setTimeout(() => {
       setLoading(prev => {
-        if (prev) console.warn("AuthProvider: Fail-Safe Unlocked");
-        return false;
+        if (prev) {
+          console.warn("AuthProvider: Hard Fail-Safe Unlocked after 5s");
+          return false;
+        }
+        return prev;
       });
-    }, hasSessionHint ? 800 : 2500);
+    }, 5000);
 
     return () => {
       unsubscribeAuth();
       clearTimeout(timer);
+      if (shieldTimer) clearTimeout(shieldTimer);
     };
   }, []);
 

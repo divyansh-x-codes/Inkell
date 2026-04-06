@@ -128,7 +128,7 @@ export default function MyProfile({ showToast }) {
             }
           </div>
 
-          <p className="profile-bio">{profile?.bio || 'Sharing stories on Inkwell.'}</p>
+          <p className="profile-bio">{profile?.bio || 'Sharing stories on Inktrix.'}</p>
           
           <div style={{ display: 'flex', gap: '20px', marginTop: '12px', marginBottom: '4px' }}>
             <div style={{ fontSize: '0.92rem', color: 'var(--white)' }}>

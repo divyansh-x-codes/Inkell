@@ -1,4 +1,4 @@
--- SQL Schema for Inkwell Supabase Integration
+-- SQL Schema for Inktrix Supabase Integration
 -- Run this in your Supabase SQL Editor
 
 -- 1. Profiles Table (syncs with auth.users)

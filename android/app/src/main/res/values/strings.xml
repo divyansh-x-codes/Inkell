@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Inktrix</string>
+    <string name="title_activity_main">Inktrix</string>
+    <string name="package_name">com.Inktrix.app</string>
+    <string name="custom_url_scheme">com.Inktrix.app</string>
+</resources>

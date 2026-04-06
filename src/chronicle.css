@@ -1,6 +1,7 @@
 .chronicle-topbar {
   padding: 16px 20px;
   display: flex;
+  
   justify-content: space-between;
   align-items: center;
   background: var(--bg);
@@ -1036,9 +1037,9 @@
 }
 
 /* ============================================
-   INKWELL-ARTICLE — Markdown body typography
+   Inktrix-ARTICLE — Markdown body typography
    ============================================ */
-.inkwell-article {
+.Inktrix-article {
   font-family: 'DM Sans', sans-serif;
   font-size: 1.08rem;
   line-height: 1.85;
@@ -1046,14 +1047,14 @@
   padding-bottom: 120px;
 }
 
-.inkwell-article p {
+.Inktrix-article p {
   margin: 0 0 1.4em;
 }
 
-.inkwell-article h1,
-.inkwell-article h2,
-.inkwell-article h3,
-.inkwell-article h4 {
+.Inktrix-article h1,
+.Inktrix-article h2,
+.Inktrix-article h3,
+.Inktrix-article h4 {
   font-family: 'Playfair Display', serif;
   color: var(--brand-red);
   font-weight: 700;
@@ -1062,24 +1063,24 @@
   letter-spacing: -0.01em;
 }
 
-.inkwell-article h1 {
+.Inktrix-article h1 {
   font-size: 1.9rem;
 }
 
-.inkwell-article h2 {
+.Inktrix-article h2 {
   font-size: 1.55rem;
 }
 
-.inkwell-article h3 {
+.Inktrix-article h3 {
   font-size: 1.3rem;
 }
 
-.inkwell-article h4 {
+.Inktrix-article h4 {
   font-size: 1.1rem;
   color: var(--text-ink);
 }
 
-.inkwell-article blockquote {
+.Inktrix-article blockquote {
   margin: 2em 0;
   padding: 18px 22px;
   border-left: 4px solid var(--accent-gold);
@@ -1091,32 +1092,32 @@
   font-family: 'Lora', serif;
 }
 
-.inkwell-article blockquote p {
+.Inktrix-article blockquote p {
   margin: 0;
 }
 
-.inkwell-article ul,
-.inkwell-article ol {
+.Inktrix-article ul,
+.Inktrix-article ol {
   padding-left: 1.4em;
   margin: 0 0 1.4em;
 }
 
-.inkwell-article li {
+.Inktrix-article li {
   margin-bottom: 0.5em;
   color: var(--text-ink);
 }
 
-.inkwell-article strong {
+.Inktrix-article strong {
   font-weight: 700;
   color: var(--text-ink);
 }
 
-.inkwell-article em {
+.Inktrix-article em {
   font-style: italic;
   color: var(--text-ink-muted);
 }
 
-.inkwell-article code {
+.Inktrix-article code {
   background: rgba(0, 0, 0, 0.07);
   padding: 2px 6px;
   border-radius: 4px;
@@ -1125,7 +1126,7 @@
   color: var(--brand-red);
 }
 
-.inkwell-article pre {
+.Inktrix-article pre {
   background: rgba(0, 0, 0, 0.06);
   border-radius: 10px;
   padding: 16px 18px;
@@ -1133,25 +1134,25 @@
   margin: 1.6em 0;
 }
 
-.inkwell-article pre code {
+.Inktrix-article pre code {
   background: none;
   padding: 0;
   color: var(--text-ink);
 }
 
-.inkwell-article hr {
+.Inktrix-article hr {
   border: none;
   border-top: 1px solid rgba(0, 0, 0, 0.15);
   margin: 2.5em 0;
 }
 
-.inkwell-article a {
+.Inktrix-article a {
   color: var(--brand-red);
   text-decoration: underline;
   text-underline-offset: 3px;
 }
 
-.inkwell-article img {
+.Inktrix-article img {
   width: 100%;
   border-radius: 12px;
   margin: 1.6em 0;
@@ -2467,8 +2468,7 @@
 
 /* ── PREMIUM HOME UI & FOLLOWING BAR ── */
 .following-bar {
-  padding: 16px 0 20px;
-  border-bottom: 8px solid #080808;
+  padding: 16px 0px 20px;
   background: var(--bg);
 }
 
@@ -2587,35 +2587,7 @@
   cursor: pointer;
 }
 
-/* ── FLOATING ACTION BUTTON (FAB) ── */
-.fab-add {
-  position: fixed;
-  bottom: 84px;
-  /* Above BottomNav */
-  right: 20px;
-  width: 56px;
-  height: 56px;
-  border-radius: 28px;
-  background: linear-gradient(135deg, #e85d04, #ff7a30);
-  border: none;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  box-shadow: 0 4px 16px rgba(232, 93, 4, 0.4);
-  z-index: 1000;
-  cursor: pointer;
-  transition: transform 0.2s, box-shadow 0.2s;
-}
-
-.fab-add:active {
-  transform: scale(0.92);
-  box-shadow: 0 2px 8px rgba(232, 93, 4, 0.3);
-}
-
-.fab-add svg {
-  width: 24px;
-  height: 24px;
-}
+/* FAB removed in favor of BottomNav center + */
 
 .tb-action-btn {
   background: none;
@@ -2726,6 +2698,7 @@
 /* ── SUBSTACK PREMIUM CARD ── */
 .substack-card {
   padding: 16px 16px 24px;
+  margin-bottom: 10px;
   border-bottom: 1px solid var(--border);
   background: var(--bg);
   cursor: pointer;
@@ -2857,6 +2830,8 @@
 
 .sc-content-box {
   padding: 16px;
+  background-color: #000000;
+ 
 }
 
 .sc-pub-row {
@@ -2967,19 +2942,18 @@
   display: flex;
   justify-content: space-around;
   align-items: center;
-  /* Vertical centering */
   height: 64px;
-  background: rgba(0, 0, 0, 0.92);
-  backdrop-filter: blur(16px);
-  border-top: 1px solid var(--border);
+  background: rgba(0, 0, 0, 0.85);
+  backdrop-filter: blur(20px) saturate(180%);
   position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
+  bottom: 24px;
+  left: 20px;
+  right: 20px;
   z-index: 1000;
-  padding: 0 10px;
-  padding-bottom: max(12px, env(safe-area-inset-bottom));
-  box-sizing: content-box;
+  padding: 0 8px;
+  border-radius: 32px;
+  border: 1px solid rgba(210, 200, 200, 0.129);
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(255, 255, 255, 0.02);
 }
 
 .premium-bn .nav-item {
@@ -2989,43 +2963,72 @@
   align-items: center;
   justify-content: center;
   flex: 1;
-  height: 64px;
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  height: 100%;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
   cursor: pointer;
 }
 
+/* Central Action Button (Add/Create) */
+.premium-bn .nav-item.action-item {
+  background: #ff8401; 
+  width: 50px;
+  height: 50px;
+  border-radius: 50%;
+  flex: none;
+  transform: translateY(0);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  box-shadow: 0 4px 12px rgba(254, 4, 3, 0.3);
+  color: #fff;
+  z-index: 1001;
+  margin: 0 10px;
+}
+
+.premium-bn .nav-item.action-item svg {
+  width: 26px;
+  height: 26px;
+  stroke-width: 2.2;
+}
+
 .premium-bn .nav-item svg {
-  width: 24px;
-  height: 24px;
+  width: 22px;
+  height: 22px;
   stroke-width: 1.8;
-  transition: transform 0.2s;
+  transition: transform 0.25s;
 }
 
 .premium-bn .nav-item.active {
-  color: var(--orange);
+  color: var(--white);
 }
 
-.premium-bn .nav-item:active svg {
-  transform: scale(0.9);
+.premium-bn .nav-item.action-item.active {
+  color: var(--orange);
+  background: #111;
+  box-shadow: 0 15px 30px rgba(255, 96, 0, 0.2);
+}
+
+.premium-bn .nav-item:not(.action-item):hover {
+  color: var(--white);
+  transform: translateY(-2px);
 }
 
 .bn-badge {
   position: absolute;
-  top: 14px;
-  right: 18%;
+  top: 15%;
+  right: 22%;
   background: var(--orange);
   color: white;
   font-size: 0.65rem;
   font-weight: 800;
   min-width: 16px;
   height: 16px;
-  border-radius: 8px;
-  border: 1.5px solid #000;
+  border-radius: 50%;
+  border: 1.5px solid #0a0a0a;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 0 4px;
+  padding: 0 2px;
   line-height: 1;
+  z-index: 2;
 }
 
 /* ── PREMIUM CONVERSATIONS (CHAT) ── */

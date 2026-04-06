@@ -17,7 +17,7 @@ export default function Welcome() {
       <div className="logo-area">
         <div className="logo-mark"></div>
         <span style={{ fontFamily: "'Playfair Display', serif", fontSize: '1.4rem', fontWeight: 700, color: 'var(--white)' }}>
-          Inkwell
+          Inktrix
         </span>
       </div>
 
@@ -33,7 +33,7 @@ export default function Welcome() {
           <div className="ill-item">🖊️</div>
           <div className="ill-item">📰</div>
         </div>
-        <h1 className="hero-title">Welcome to<br />Inkwell</h1>
+        <h1 className="hero-title">Welcome to<br />Inktrix</h1>
         <p className="hero-sub">The home for great culture</p>
       </div>
 
@@ -41,7 +41,7 @@ export default function Welcome() {
         <button className="btn-primary" onClick={() => navigate('/signup')}>Sign up free</button>
         <button className="btn-secondary" onClick={() => navigate('/login')}>Log in</button>
         <p className="legal">
-          By signing up, you agree to Inkwell's <a href="#">Terms of Use</a> and <a href="#">Privacy Policy</a>.
+          By signing up, you agree to Inktrix's <a href="#">Terms of Use</a> and <a href="#">Privacy Policy</a>.
         </p>
       </div>
     </div>

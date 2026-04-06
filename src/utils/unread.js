@@ -1,5 +1,5 @@
 // Shared utility for managing unread message counts across the app
-export const UNREAD_KEY = 'inkwell_unread';
+export const UNREAD_KEY = 'Inktrix_unread';
 
 export function getTotalUnread() {
   try {
@@ -25,7 +25,7 @@ export function clearUnread(threadId) {
     if (data[threadId]) {
       delete data[threadId];
       localStorage.setItem(UNREAD_KEY, JSON.stringify(data));
-      window.dispatchEvent(new Event('inkwell_unread_changed'));
+      window.dispatchEvent(new Event('Inktrix_unread_changed'));
     }
   } catch {}
 }
@@ -36,6 +36,6 @@ export function addUnread(threadId) {
     data[threadId] = (data[threadId] || 0) + 1;
     localStorage.setItem(UNREAD_KEY, JSON.stringify(data));
     // Dispatch custom event for real-time UI updates
-    window.dispatchEvent(new Event('inkwell_unread_changed'));
+    window.dispatchEvent(new Event('Inktrix_unread_changed'));
   } catch {}
 }

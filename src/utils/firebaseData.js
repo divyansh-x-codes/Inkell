@@ -189,7 +189,7 @@ export const subscribeToFollowedBlogs = (userId, setBlogs) => {
 
 export const subscribeToFollowedUsers = (userId, setFollowedUsers) => {
   // 1. Get the list of UIDs the user follows
-  const q = query(doc(db, FOLLOWS_COL, userId));
+  const q = doc(db, FOLLOWS_COL, userId);
   return onSnapshot(q, async (snap) => {
     if (!snap.exists()) {
       setFollowedUsers([]);

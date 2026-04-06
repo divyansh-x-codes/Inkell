@@ -4,9 +4,9 @@ import { getFirestore } from "firebase/firestore";
 
 const firebaseConfig = {
   apiKey: "AIzaSyB6Jrdv5EreERVjwRm25eLlPFxES0JNm0k",
-  authDomain: "inkwell-3b69c.firebaseapp.com",
-  projectId: "inkwell-3b69c",
-  storageBucket: "inkwell-3b69c.firebasestorage.app",
+  authDomain: "Inktrix-3b69c.firebaseapp.com",
+  projectId: "Inktrix-3b69c",
+  storageBucket: "Inktrix-3b69c.firebasestorage.app",
   messagingSenderId: "314399971865",
   appId: "1:314399971865:web:531cf87378ac79af42a888",
   measurementId: "G-XRPHX3XKGN"

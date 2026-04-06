@@ -23,7 +23,7 @@ const colorForName = (name) => avatarColors[(name||'A').charCodeAt(0) % avatarCo
 export default function ArticleCard({ article, showToast, isDashboard }) {
   const navigate = useNavigate();
   const { user } = useAuth();
-  const id = article.id;
+  const id = article.id ? String(article.id) : null;
 
   const [liked, setLiked] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -144,10 +144,8 @@ export default function ArticleCard({ article, showToast, isDashboard }) {
             </div>
           </div>
           <div className="sc-brand-badge">
-            <svg viewBox="0 0 24 24" fill="var(--orange)" stroke="none" style={{ width: 14, height: 14 }}>
-               <path d="M4 4h16v3H4zM4 10h16v7l-8 4-8-4v-7z" />
-            </svg>
-            <span>substack</span>
+            <img src="/logo.png" alt="logo" style={{ width: 25, height: 25, borderRadius: 2 }} />
+            <span>Inktrix</span>
           </div>
         </div>
 
@@ -167,7 +165,7 @@ export default function ArticleCard({ article, showToast, isDashboard }) {
           <div className="sc-content-box">
              <div className="sc-pub-row">
                 <div className="sc-pub-icon">🗞️</div>
-                <span className="sc-pub-name">{article.category || 'INKWELL MAGAZINE'}</span>
+                <span className="sc-pub-name">{article.category || 'Inktrix MAGAZINE'}</span>
              </div>
              <h2 className="sc-title">{article.title}</h2>
              <p className="sc-excerpt">{article.tagline}</p>
@@ -183,16 +181,14 @@ export default function ArticleCard({ article, showToast, isDashboard }) {
         {/* Interaction Bar */}
         <div className="sc-actions">
            <button className={`sc-action-item ${liked ? 'active' : ''}`} onClick={handleLike}>
-              <svg viewBox="0 0 24 24" fill={liked ? '#f91880' : 'none'} stroke={liked ? '#f91880' : 'currentColor'} strokeWidth="1.8">
+              <svg viewBox="0 0 24 24" fill={liked ? '#f91880' : 'none'} stroke={liked ? '#f91880' : 'currentColor'} strokeWidth="1.8" style={{ width: 22, height: 22 }}>
                 <path d="M20.8 4.6a5.5 5.5 0 0 0-7.7 0l-1.1 1-1.1-1a5.5 5.5 0 0 0-7.8 7.8l1.1 1.1L12 21.2l7.8-7.8 1.1-1.1a5.5 5.5 0 0 0 0-7.8z" />
               </svg>
               <span>{localLikesCount > 0 ? (localLikesCount > 999 ? (localLikesCount/1000).toFixed(1) + 'K' : localLikesCount) : ''}</span>
            </button>
 
            <button className="sc-action-item" onClick={(e) => { e.stopPropagation(); navigate(`/comments/${id}`); }}>
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
-                 <path d="M21 15v4a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v10z" />
-              </svg>
+              <img src="/icons8-chat-96.png" alt="comments" style={{ width: 26, height: 26, opacity: 0.7, filter: 'brightness(1.2)' }} />
               <span>{localCommentsCount > 0 ? localCommentsCount : ''}</span>
            </button>
 

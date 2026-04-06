@@ -115,7 +115,7 @@ export default function ChatThread({ showToast }) {
             <div className="chat-welcome-box">
               <div className="welcome-chat-icon">👋</div>
               <h3>Say hello to {displayName.split(' ')[0]}</h3>
-              <p>Start a premium conversation on Inkwell.</p>
+              <p>Start a premium conversation on Inktrix.</p>
             </div>
           )}
           {messages.map((msg, idx) => {

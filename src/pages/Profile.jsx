@@ -55,7 +55,7 @@ export default function Profile({ showToast }) {
       setProfile({
         name: decodedName || 'Creator',
         handle: `@${decodedName.toLowerCase().replace(/\s/g, '')}`,
-        bio: 'Sharing stories on Inkwell.',
+        bio: 'Sharing stories on Inktrix.',
         avatar: null, color: '#e85d04'
       });
       setLoading(false);
@@ -219,7 +219,7 @@ export default function Profile({ showToast }) {
                 }
               </div>
 
-              <p className="profile-bio">{profile.bio || 'Sharing stories on Inkwell.'}</p>
+              <p className="profile-bio">{profile.bio || 'Sharing stories on Inktrix.'}</p>
 
               <div style={{ display: 'flex', gap: '20px', marginTop: '12px', marginBottom: '4px' }}>
                 <div style={{ fontSize: '0.92rem', color: 'var(--white)' }}>

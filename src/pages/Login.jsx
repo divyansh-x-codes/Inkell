@@ -32,7 +32,7 @@ export default function Login({ showToast }) {
         <button className="back-btn" onClick={() => navigate('/')}>←</button>
       </div>
       <h2 className="screen-title">Welcome back</h2>
-      <p className="screen-sub">Log in to your Inkwell account</p>
+      <p className="screen-sub">Log in to your Inktrix account</p>
 
       <div className="input-group">
         <label>Email</label>

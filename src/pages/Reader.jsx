@@ -280,7 +280,7 @@ export default function Reader({ showToast }) {
 
           <div className="reader-body">
             {(article.coverImage || article.cover_image) && <img src={article.coverImage || article.cover_image} className="reader-hero-img" alt="cover" />}
-            <div className="inkwell-article">
+            <div className="Inktrix-article">
               <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>
                 {article.content || article.body || ''}
               </ReactMarkdown>

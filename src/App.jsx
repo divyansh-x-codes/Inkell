@@ -53,7 +53,7 @@ const LoadingScreen = () => {
         WebkitTextFillColor: 'transparent',
         backgroundSize: '200% 100%',
         animation: 'shimmer 2s infinite linear'
-      }}>INKWELL</div>
+      }}>Inktrix</div>
       <div style={{ fontSize: '0.8rem', opacity: 0.4, fontWeight: 400 }}>
         {showHint ? 'Taking longer than usual... Check your connection' : 'Connecting to your feed...'}
       </div>
