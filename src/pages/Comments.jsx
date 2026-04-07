@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { subscribeToComments, addComment, deleteComment, getBlog, recalculateCommentsCount } from '../utils/firebaseData';
+import { subscribeToComments, addComment, deleteComment, getPost } from '../utils/supabaseData';
 
 const getInitials = (name) => {
   if (!name) return 'U';
@@ -21,43 +21,22 @@ export default function Comments({ showToast }) {
   const [comments, setComments] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  // Load article details directly from Firestore
   useEffect(() => {
     if (!id) return;
-    getBlog(id).then(data => {
+    getPost(id).then(data => {
       if (data) setArticle(data);
-    }).catch(err => {
-      console.error("Failed to load article context for comments:", err);
     });
   }, [id]);
 
-  // Real-time comments subscription
   useEffect(() => {
     if (!id) return;
     setLoading(true);
-    let healed = false;
     const unsubscribe = subscribeToComments(id, (data) => {
-      // Sort locally (newest first) to avoid needing a Firestore composite index
-      const sorted = [...(data || [])].sort((a, b) => {
-        const timeA = a.createdAt?.toMillis ? a.createdAt.toMillis() : (a.timestamp || 0);
-        const timeB = b.createdAt?.toMillis ? b.createdAt.toMillis() : (b.timestamp || 0);
-        return timeB - timeA;
-      });
-      setComments(sorted);
+      setComments(data || []);
       setLoading(false);
-
-      // Self-heal: recalculate stale commentsCount on first load
-      if (!healed) {
-        healed = true;
-        recalculateCommentsCount(id);
-      }
     });
     
-    const timer = setTimeout(() => setLoading(false), 3000);
-    return () => {
-      unsubscribe();
-      clearTimeout(timer);
-    };
+    return () => unsubscribe();
   }, [id]);
 
   const handleSubmit = async (e) => {
@@ -70,29 +49,11 @@ export default function Comments({ showToast }) {
     }
 
     const content = newComment.trim();
-    setNewComment(''); // Instant clear
+    setNewComment('');
 
-    // --- OPTIMISTIC UPDATE ---
-    const tempId = 'temp-' + Date.now();
-    const optimisticComment = {
-      id: tempId,
-      content: content,
-      userId: user.uid,
-      userName: user.displayName || user.name || 'You',
-      userAvatar: user.photoURL || user.avatar || null,
-      createdAt: { toDate: () => new Date() }, // Fake Firestore Date object
-      isOptimistic: true
-    };
-
-    // Prepend to list immediately
-    setComments(prev => [optimisticComment, ...prev]);
-
-    const result = await addComment(id, content, user);
-    
+    const result = await addComment(id, user.id, content);
     if (result.error) {
       showToast('Failed to post comment');
-      // Rollback: remove the optimistic comment and restore text
-      setComments(prev => prev.filter(c => c.id !== tempId));
       setNewComment(content); 
     } else {
       showToast('Comment posted!');
@@ -100,22 +61,17 @@ export default function Comments({ showToast }) {
   };
 
   const handleDelete = async (commentId) => {
-    // Optimistic UI — remove comment instantly from local state
-    setComments(prev => prev.filter(c => c.id !== commentId));
-
-    const result = await deleteComment(commentId, id);
+    const result = await deleteComment(commentId);
     if (result.error) {
-      console.error('Delete failed:', result.error);
-      showToast('Failed to delete: ' + (result.error.message || 'Unknown error'));
-      // The real-time listener will re-add it automatically if delete failed
+      showToast('Failed to delete');
     } else {
       showToast('Comment deleted');
     }
   };
 
-  if (!article && !loading) return <div style={{ padding: '20px', color: 'white' }}>Article not found</div>;
+  if (!article && !loading) return <div style={{ padding: '20px', color: 'white' }}>Post not found</div>;
 
-  const authorName = article?.authorName || article?.name || 'Author';
+  const authorName = article?.profiles?.name || article?.profiles?.username || 'Author';
 
   return (
     <div className="view active comments-page">
@@ -136,13 +92,13 @@ export default function Comments({ showToast }) {
               <div
                 className="author-letter-avatar"
                 style={{ width: 40, height: 40, background: colorForName(authorName), cursor: 'pointer' }}
-                onClick={() => navigate(`/profile/${encodeURIComponent(authorName)}`)}
+                onClick={() => navigate(`/profile/${encodeURIComponent(authorName)}`, { state: { authorId: article.user_id } })}
               >
-                {getInitials(authorName)}
+                {article.profiles?.avatar_url ? <img src={article.profiles.avatar_url} style={{width:'100%',height:'100%',borderRadius:'50%'}} alt="av" /> : getInitials(authorName)}
               </div>
-              <div className="note-author-info" style={{ cursor: 'pointer' }} onClick={() => navigate(`/profile/${encodeURIComponent(authorName)}`)}>
+              <div className="note-author-info" style={{ cursor: 'pointer' }} onClick={() => navigate(`/profile/${encodeURIComponent(authorName)}`, { state: { authorId: article.user_id } })}>
                 <div className="note-author-name">{authorName}</div>
-                <div className="note-meta">{article.category} · {article.readTime}</div>
+                <div className="note-meta">{article.category || 'Post'}</div>
               </div>
             </div>
             <div style={{ fontSize: '1.05rem', marginTop: '12px', color: 'var(--white)', lineHeight: 1.4 }}>
@@ -166,30 +122,30 @@ export default function Comments({ showToast }) {
                 <div
                   style={{
                     width: 40, height: 40, borderRadius: '50%', flexShrink: 0,
-                    background: colorForName(c.userName),
+                    background: colorForName(c.profiles?.name || c.profiles?.username),
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
                     fontWeight: 700, fontSize: '0.85rem', color: 'white', cursor: 'pointer',
                     overflow: 'hidden'
                   }}
-                  onClick={() => navigate(`/profile/${encodeURIComponent(c.userName)}`)}
+                  onClick={() => navigate(`/profile/${encodeURIComponent(c.profiles?.name || c.profiles?.username)}`, { state: { authorId: c.user_id } })}
                 >
-                  {c.userAvatar ? <img src={c.userAvatar} style={{width:'100%',height:'100%',objectFit:'cover'}} alt="avatar" /> : getInitials(c.userName)}
+                  {c.profiles?.avatar_url ? <img src={c.profiles.avatar_url} style={{width:'100%',height:'100%',objectFit:'cover'}} alt="avatar" /> : getInitials(c.profiles?.name || c.profiles?.username)}
                 </div>
                 <div className="thread-content">
                   <div className="thread-author-row">
                     <div
                       className="thread-author-name"
                       style={{ cursor: 'pointer' }}
-                      onClick={() => navigate(`/profile/${encodeURIComponent(c.userName)}`)}
+                      onClick={() => navigate(`/profile/${encodeURIComponent(c.profiles?.name || c.profiles?.username)}`, { state: { authorId: c.user_id } })}
                     >
-                      {c.userName}
+                      {c.profiles?.name || c.profiles?.username}
                     </div>
                     <div className="thread-meta">
                       <span style={{ color: 'var(--gray)', fontSize: '0.8rem', marginLeft: '12px' }}>
-                        {c.createdAt?.toDate ? new Date(c.createdAt.toDate()).toLocaleDateString() : 'Just now'}
+                        {c.created_at ? new Date(c.created_at).toLocaleDateString() : 'Just now'}
                       </span>
                     </div>
-                    {user && c.userId === user.uid && (
+                    {user && c.user_id === user.id && (
                       <button className="del-btn" onClick={() => handleDelete(c.id)} style={{marginLeft: 'auto', background: 'none', border: 'none', color: '#666', cursor: 'pointer', padding: '4px'}}>
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" style={{width: 17, height: 17}}>
                           <polyline points="3 6 5 6 21 6"></polyline>
@@ -209,17 +165,17 @@ export default function Comments({ showToast }) {
       <div className="reply-bottom-bar">
         <div style={{
           width: 36, height: 36, borderRadius: '50%', flexShrink: 0,
-          background: '#1a9e6e', overflow: 'hidden',
+          background: '#cc4400', overflow: 'hidden',
           display: 'flex', alignItems: 'center',
           justifyContent: 'center', color: 'white', fontWeight: 700, fontSize: '0.8rem',
         }}>
-          {user?.photoURL ? <img src={user.photoURL} style={{width:'100%',height:'100%',objectFit:'cover'}} alt="m" /> : getInitials(user?.displayName || 'U')}
+          {user?.profiles?.avatar_url ? <img src={user.profiles.avatar_url} style={{width:'100%',height:'100%',objectFit:'cover'}} alt="m" /> : getInitials(user?.profiles?.name || user?.email || 'U')}
         </div>
         <form className="reply-form" onSubmit={handleSubmit}>
           <input
             type="text"
             className="reply-input"
-            placeholder={user ? "Leave a reply..." : "Login to post a comment"}
+            placeholder={user ? "Leave a reply..." : "Login to comment"}
             value={newComment}
             disabled={!user}
             onChange={e => setNewComment(e.target.value)}
@@ -242,3 +198,4 @@ export default function Comments({ showToast }) {
     </div>
   );
 }
+

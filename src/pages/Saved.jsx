@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import BottomNav from '../components/BottomNav';
 import ArticleCard from '../components/ArticleCard';
 import { useAuth } from '../context/AuthContext';
-import { subscribeToSavedBlogs } from '../utils/firebaseData';
+import { subscribeToSavedPosts } from '../utils/supabaseData';
 
 export default function Saved({ showToast }) {
   const navigate = useNavigate();
@@ -11,20 +11,20 @@ export default function Saved({ showToast }) {
   const [savedArticles, setSavedArticles] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  // Real-time synchronization of the reading list from Firestore
+  // Real-time synchronization of the reading list from Supabase
   useEffect(() => {
     if (!user) {
       setLoading(false);
       return;
     }
 
-    const unsubscribe = subscribeToSavedBlogs(user.uid, (blogs) => {
+    const unsubscribe = subscribeToSavedPosts(user.id, (blogs) => {
       setSavedArticles(blogs);
       setLoading(false);
     });
 
-    return () => unsubscribe();
-  }, [user]);
+    return () => unsubscribe && unsubscribe();
+  }, [user?.id]);
 
   return (
     <div className="view active saved-page">
@@ -78,8 +78,9 @@ export default function Saved({ showToast }) {
           )}
         </div>
 
-        <BottomNav showToast={showToast} />
+        <BottomNav showToast={showToast} currentPath="/saved" />
       </div>
     </div>
   );
 }
+

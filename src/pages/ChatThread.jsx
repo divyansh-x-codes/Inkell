@@ -1,7 +1,8 @@
 import { useState, useRef, useEffect } from 'react';
 import { useNavigate, useLocation, useParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { subscribeToMessages, sendMessage, getUserProfile, clearUserUnread } from '../utils/firebaseData';
+import { supabase } from '../supabaseClient';
+import { subscribeToMessages, sendMessage } from '../utils/supabaseData';
 
 export default function ChatThread({ showToast }) {
   const navigate = useNavigate();
@@ -23,32 +24,34 @@ export default function ChatThread({ showToast }) {
 
   useEffect(() => {
     if (!recipient && id && user) {
-      const parts = id.split('_');
-      const otherUid = parts.find(p => p !== user.uid);
-      if (otherUid) {
-        getUserProfile(otherUid).then(prof => {
-          if (prof) {
-            setRecipient({
-              id: prof.uid || prof.id,
-              name: prof.name,
-              avatar: prof.avatar || prof.photoURL || prof.profilePic
-            });
-          }
-        });
-      }
+      const fetchRecipient = async () => {
+        const { data: participants } = await supabase
+          .from('conversation_participants')
+          .select('user_id, profiles(*)')
+          .eq('conversation_id', id)
+          .neq('user_id', user.id);
+        
+        const prof = participants?.[0]?.profiles;
+        if (prof) {
+          setRecipient({
+            id: prof.id,
+            name: prof.name || prof.username,
+            avatar: prof.avatar_url
+          });
+        }
+      };
+      fetchRecipient();
     }
-  }, [id, user, recipient]);
+  }, [id, user?.id, recipient]);
 
   useEffect(() => {
-    if (!id || !user?.uid) return;
-    clearUserUnread(id, user.uid);
+    if (!id || !user?.id) return;
     const unsubscribe = subscribeToMessages(id, (data) => {
       setMessages(data);
       setLoading(false);
-      clearUserUnread(id, user.uid);
     });
     return () => unsubscribe();
-  }, [id, user?.uid]);
+  }, [id, user?.id]);
 
   useEffect(() => {
     if (messages.length > 0) {
@@ -60,7 +63,7 @@ export default function ChatThread({ showToast }) {
     const text = input.trim();
     if (!text || !user || !recipient) return;
     setInput('');
-    const result = await sendMessage(id, user, text, recipient);
+    const result = await sendMessage(id, user.id, text);
     if (result.error) showToast('Failed to send message');
   };
 
@@ -78,16 +81,14 @@ export default function ChatThread({ showToast }) {
   if (!user) return <div className="chat-empty-status">Login to chat</div>;
   
   const displayName = recipient?.name || 'Chat';
-  const recipientAvatar = recipient?.avatar || recipient?.photoURL || recipient?.profilePic;
+  const recipientAvatar = recipient?.avatar;
 
   return (
     <div className="chat-page view active">
       <div className="app-shell">
         <div className="chat-header">
           <button className="tb-action-btn" onClick={() => navigate(-1)} style={{ marginRight: 4 }}>
-            <svg viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" style={{ width: 22, height: 22 }}>
-              <polyline points="15 18 9 12 15 6"></polyline>
-            </svg>
+             <svg viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" style={{ width: 22, height: 22 }}><polyline points="15 18 9 12 15 6"></polyline></svg>
           </button>
 
           <div className="chat-header-info" onClick={() => navigate(`/profile/${encodeURIComponent(displayName)}`, { state: { authorId: recipient?.id } })}>
@@ -103,9 +104,7 @@ export default function ChatThread({ showToast }) {
 
           <button className="tb-action-btn" onClick={() => showToast('Options')}>
             <svg viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" style={{ width: 22, height: 22 }}>
-              <circle cx="12" cy="12" r="1.5"></circle>
-              <circle cx="12" cy="5" r="1.5"></circle>
-              <circle cx="12" cy="19" r="1.5"></circle>
+              <circle cx="12" cy="12" r="1.5"></circle><circle cx="12" cy="5" r="1.5"></circle><circle cx="12" cy="19" r="1.5"></circle>
             </svg>
           </button>
         </div>
@@ -119,10 +118,10 @@ export default function ChatThread({ showToast }) {
             </div>
           )}
           {messages.map((msg, idx) => {
-            const isMine = msg.senderId === user.uid;
+            const isMine = msg.sender_id === user.id;
             const bubbleKey = `bubble-${msg.id || idx}`;
             return (
-              <div key={msg.id} className={`chat-bubble-row ${isMine ? 'mine' : 'theirs'}`}>
+              <div key={msg.id || idx} className={`chat-bubble-row ${isMine ? 'mine' : 'theirs'}`}>
                 {!isMine && (
                   recipientAvatar && !brokenImages[bubbleKey]
                     ? <img src={recipientAvatar} alt="" className="chat-bubble-avatar" onError={() => handleImageError(bubbleKey)} />
@@ -130,10 +129,10 @@ export default function ChatThread({ showToast }) {
                 )}
                 <div className="chat-bubble-group">
                   <div className={`chat-bubble ${isMine ? 'bubble-mine' : 'bubble-theirs'}`}>
-                    {msg.text}
+                    {msg.content}
                   </div>
                   <div className="chat-bubble-time">
-                    {msg.createdAt?.toDate ? new Date(msg.createdAt.toDate()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
+                    {msg.created_at ? new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
                   </div>
                 </div>
               </div>
@@ -152,8 +151,7 @@ export default function ChatThread({ showToast }) {
           />
           <button className="chat-send-btn" onClick={handleSend} disabled={!input.trim()}>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" style={{ width: 18, height: 18, marginLeft: 2 }}>
-              <line x1="22" y1="2" x2="11" y2="13"></line>
-              <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+              <line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
             </svg>
           </button>
         </div>
@@ -161,3 +159,4 @@ export default function ChatThread({ showToast }) {
     </div>
   );
 }
+

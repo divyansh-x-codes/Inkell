@@ -4,16 +4,17 @@ import BottomNav from '../components/BottomNav';
 import ArticleCard from '../components/ArticleCard';
 import SubscribeModal from '../components/SubscribeModal';
 import { useAuth } from '../context/AuthContext';
+import { supabase } from '../supabaseClient';
 import {
-  getConversationId,
-  subscribeToUserProfile,
-  subscribeToUserArticles,
-  subscribeToUserActivity,
-  subscribeToUserLikes,
-  followAuthor,
-  unfollowAuthor,
-  getFollowing,
-} from '../utils/firebaseData';
+  getUserProfile,
+  getPostsByAuthor,
+  getLikedPosts,
+  getUserActivity,
+  getFollowStats,
+  followUser,
+  unfollowUser,
+  isFollowing
+} from '../utils/supabaseData';
 
 const VerifiedIcon = ({ size = 20 }) => (
   <svg viewBox="0 0 24 24" fill="none" stroke="#f4622a" strokeWidth="2" style={{ width: size, height: size }}>
@@ -44,69 +45,61 @@ export default function Profile({ showToast }) {
   const [loading, setLoading] = useState(true);
   const [activity, setActivity] = useState([]);
   const [likedPosts, setLikedPosts] = useState([]);
+  const [stats, setStats] = useState({ followers: 0, following: 0 });
 
   const authorId = location.state?.authorId;
   const decodedName = decodeURIComponent(username || '').replace('@', '');
 
-  // 1. Profile Sync (Real-time)
   useEffect(() => {
-    const uid = authorId || null;
-    if (!uid) {
-      setProfile({
-        name: decodedName || 'Creator',
-        handle: `@${decodedName.toLowerCase().replace(/\s/g, '')}`,
-        bio: 'Sharing stories on Inktrix.',
-        avatar: null, color: '#e85d04'
-      });
-      setLoading(false);
-      return;
-    }
+    const fetchProfile = async () => {
+      let uid = authorId;
+      if (!uid && decodedName) {
+        // Try looking up by username
+        const { data } = await supabase.from('profiles').select('id').eq('username', decodedName).single();
+        uid = data?.id;
+      }
 
-    setLoading(true);
-    const unsub = subscribeToUserProfile(uid, (p) => {
+      if (!uid) {
+        setProfile({ name: decodedName, username: decodedName, bio: 'Creator on Inktrix' });
+        setLoading(false);
+        return;
+      }
+
+      setLoading(true);
+      const p = await getUserProfile(uid);
       setProfile(p);
+      
+      const s = await getFollowStats(uid);
+      setStats(s);
+
+      if (user?.id) {
+        const f = await isFollowing(user.id, uid);
+        setFollowed(f);
+      }
       setLoading(false);
-    });
-    return () => unsub && unsub();
-  }, [authorId, decodedName]);
-
-  // 2. Follow state sync
-  useEffect(() => {
-    if (!user?.uid || !authorId) return;
-    getFollowing(user.uid).then(following => {
-      setFollowed(following.includes(authorId));
-    });
-  }, [user, authorId]);
-
-  // 3. Tab Sync (Individual Listeners)
-  useEffect(() => {
-    const uid = profile?.uid || profile?.id;
-    if (!uid) return;
-
-    let unsubPosts, unsubActivity, unsubLikes;
-
-    if (activeTab === 'Posts') {
-      unsubPosts = subscribeToUserArticles(uid, (data) => {
-        setPosts([...data].sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0)));
-      });
-    } else if (activeTab === 'Activity') {
-      unsubActivity = subscribeToUserActivity(uid, (data) => {
-        setActivity([...data].sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0)));
-      });
-    } else if (activeTab === 'Likes') {
-      unsubLikes = subscribeToUserLikes(uid, (data) => {
-        setLikedPosts([...data].sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0)));
-      });
-    }
-
-    return () => {
-      if (unsubPosts) unsubPosts();
-      if (unsubActivity) unsubActivity();
-      if (unsubLikes) unsubLikes();
     };
-  }, [profile, activeTab]);
 
-  const handleSubscribe = async () => {
+    fetchProfile();
+  }, [authorId, decodedName, user?.id]);
+
+  useEffect(() => {
+    if (!profile?.id) return;
+    const loadTabData = async () => {
+      if (activeTab === 'Posts') {
+        const data = await getPostsByAuthor(profile.id);
+        setPosts(data);
+      } else if (activeTab === 'Activity') {
+        const data = await getUserActivity(profile.id);
+        setActivity(data);
+      } else if (activeTab === 'Likes') {
+        const data = await getLikedPosts(profile.id);
+        setLikedPosts(data);
+      }
+    };
+    loadTabData();
+  }, [profile?.id, activeTab]);
+
+  const handleSubscribe = () => {
     if (!user) { showToast('Login to subscribe'); navigate('/login'); return; }
     if (subscribed) {
       setSubscribed(false);
@@ -119,55 +112,37 @@ export default function Profile({ showToast }) {
   const confirmSubscribe = () => {
     setSubscribed(true);
     setShowSubModal(false);
-    showToast(`Subscribed to ${profile?.name || 'author'}`);
+    showToast(`Subscribed to ${profile?.name || profile?.username}`);
   };
 
   const handleFollow = async () => {
     if (!user) { showToast('Login to follow'); navigate('/login'); return; }
-    const targetUid = profile?.uid || profile?.id || authorId;
-    if (!targetUid) return;
     if (followed) {
       setFollowed(false);
-      await unfollowAuthor(user.uid, targetUid);
+      await unfollowUser(user.id, profile.id);
+      setStats(prev => ({ ...prev, followers: Math.max(0, prev.followers - 1) }));
       showToast('Unfollowed');
     } else {
       setFollowed(true);
-      await followAuthor(user.uid, targetUid);
-      showToast(`Following ${profile?.name}`);
+      await followUser(user.id, profile.id);
+      setStats(prev => ({ ...prev, followers: prev.followers + 1 }));
+      showToast(`Following ${profile?.name || profile?.username}`);
     }
   };
 
   const openChat = () => {
-    if (!user) {
-      showToast('Login to message');
-      navigate('/login');
-      return;
-    }
-    const targetUid = profile?.uid || profile?.id || authorId;
-    if (!targetUid) { showToast('Cannot start chat with this creator'); return; }
-    if (targetUid === user.uid) { showToast("That's your own profile!"); return; }
-
-    const convoId = getConversationId(user.uid, targetUid);
-    navigate(`/chat/${convoId}`, {
-      state: {
-        recipientUserId: targetUid,
-        recipientName: profile.name,
-        recipientAvatar: profile.avatar || null,
-      }
-    });
+    showToast('Direct messaging coming to Supabase soon!');
   };
 
   const TABS = ['Posts', 'Activity', 'Likes'];
-  const isOwnProfile = user && (profile?.uid === user.uid || profile?.id === user.uid);
+  const isOwnProfile = user && profile?.id === user.id;
+
+  if (loading) return <div className="app-shell" style={{ display:'flex', alignItems:'center', justifyContent:'center', height:'100vh', background:'var(--paper-bg)' }}>Loading...</div>;
 
   return (
     <div className="profile-page app-shell">
       {showSubModal && (
-        <SubscribeModal
-          author={profile?.name}
-          onClose={() => setShowSubModal(false)}
-          onConfirm={confirmSubscribe}
-        />
+        <SubscribeModal author={profile?.name || profile?.username} onClose={() => setShowSubModal(false)} onConfirm={confirmSubscribe} />
       )}
 
       <div className="profile-topbar">
@@ -176,58 +151,34 @@ export default function Profile({ showToast }) {
             <polyline points="15 18 9 12 15 6"></polyline>
           </svg>
         </button>
-        <div className="tb-right-actions">
-          <button className="tb-circle-btn" onClick={() => navigate('/search')}>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-              <circle cx="11" cy="11" r="8"></circle>
-              <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-            </svg>
-          </button>
-        </div>
       </div>
 
       <div className="profile-scroll-area">
-        {loading ? (
-          <div style={{ textAlign: 'center', padding: '100px 20px', color: '#666' }}>Loading profile...</div>
-        ) : profile && (
+        {profile && (
           <>
             <div className="profile-header-main">
               <div className="profile-title-row">
                 <div className="profile-info">
                   <h1 className="profile-name-header">
-                    {profile.name}
-                    {profile.verified && (
-                      <span style={{ marginLeft: 8, display: 'inline-flex', verticalAlign: 'middle' }}>
-                        <VerifiedIcon size={22} />
-                      </span>
-                    )}
+                    {profile.name || profile.username}
+                    {profile.verified && <span style={{ marginLeft: 8 }}><VerifiedIcon size={22} /></span>}
                   </h1>
-                  <p className="profile-handle">{profile.handle || `@${profile.name?.toLowerCase().replace(/\s/g, '')}`}</p>
+                  <p className="profile-handle">@{profile.username || 'user'}</p>
                 </div>
-                {profile.avatar
-                  ? <img src={profile.avatar} alt={profile.name} className="profile-avatar-large" />
-                  : (
-                    <div style={{
-                      width: 90, height: 90, borderRadius: '50%', flexShrink: 0,
-                      background: profile.color || '#e85d04', display: 'flex', alignItems: 'center',
-                      justifyContent: 'center', fontWeight: 800, fontSize: '2rem',
-                      color: 'white', marginLeft: 16, fontFamily: "'DM Sans',sans-serif",
-                    }}>
-                      {getInitials(profile.name)}
-                    </div>
-                  )
-                }
+                <div className="profile-avatar-large" style={{ background: '#cc4400', display:'flex', alignItems:'center', justifyContent:'center', color:'white', fontWeight:800, fontSize:'2rem', borderRadius:'50%', overflow:'hidden' }}>
+                    {profile.avatar_url ? <img src={profile.avatar_url} alt="av" style={{width:'100%', height:'100%', objectFit:'cover'}} /> : getInitials(profile.name || profile.username)}
+                </div>
               </div>
 
-              <p className="profile-bio">{profile.bio || 'Sharing stories on Inktrix.'}</p>
+              <p className="profile-bio">{profile.bio || 'Author on Inktrix.'}</p>
 
               <div style={{ display: 'flex', gap: '20px', marginTop: '12px', marginBottom: '4px' }}>
                 <div style={{ fontSize: '0.92rem', color: 'var(--white)' }}>
-                  <span style={{ fontWeight: 700 }}>{profile.followersCount || 0}</span>
+                  <span style={{ fontWeight: 700 }}>{stats.followers}</span>
                   <span style={{ color: 'var(--gray)', marginLeft: '6px' }}>Subscribers</span>
                 </div>
                 <div style={{ fontSize: '0.92rem', color: 'var(--white)' }}>
-                  <span style={{ fontWeight: 700 }}>{profile.followingCount || 0}</span>
+                  <span style={{ fontWeight: 700 }}>{stats.following}</span>
                   <span style={{ color: 'var(--gray)', marginLeft: '6px' }}>Following</span>
                 </div>
               </div>
@@ -237,25 +188,9 @@ export default function Profile({ showToast }) {
                   <button className="btn-subscribe-main" onClick={() => navigate('/edit-profile')}>Edit Profile</button>
                 ) : (
                   <>
-                    <button
-                      className="btn-subscribe-main"
-                      onClick={handleSubscribe}
-                      style={{ background: subscribed ? '#444' : '#60c1fb' }}
-                    >
-                      {subscribed ? 'Subscribed ✓' : 'Subscribe'}
-                    </button>
-                    <button
-                      className="btn-follow-main"
-                      onClick={handleFollow}
-                      style={{ background: followed ? '#1a3a1a' : '#262626', color: followed ? '#4caf50' : 'white' }}
-                    >
-                      {followed ? 'Following' : 'Follow'}
-                    </button>
-                    <button className="btn-message-icon" onClick={openChat} title="Send Message">
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" style={{ width: '18px', height: '18px' }}>
-                        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
-                      </svg>
-                    </button>
+                    <button className="btn-subscribe-main" onClick={handleSubscribe} style={{ background: subscribed ? '#444' : '#60c1fb' }}>{subscribed ? 'Subscribed ✓' : 'Subscribe'}</button>
+                    <button className="btn-follow-main" onClick={handleFollow} style={{ background: followed ? '#1a3a1a' : '#262626', color: followed ? '#4caf50' : 'white' }}>{followed ? 'Following' : 'Follow'}</button>
+                    <button className="btn-message-icon" onClick={openChat}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" style={{ width: '18px', height: '18px' }}><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg></button>
                   </>
                 )}
               </div>
@@ -263,68 +198,38 @@ export default function Profile({ showToast }) {
 
             <div className="profile-tabs">
               {TABS.map(tab => (
-                <div
-                  key={tab}
-                  className={`ptab-item ${activeTab === tab ? 'active' : ''}`}
-                  onClick={() => setActiveTab(tab)}
-                >
-                  {tab}
-                </div>
+                <div key={tab} className={`ptab-item ${activeTab === tab ? 'active' : ''}`} onClick={() => setActiveTab(tab)}>{tab}</div>
               ))}
             </div>
 
             <div className="profile-feed">
               {activeTab === 'Posts' && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                  {posts.length === 0 ? (
-                    <div style={{ textAlign: 'center', padding: '60px 20px', color: '#555' }}>
-                      <p style={{ opacity: 0.6 }}>No stories yet.</p>
-                    </div>
-                  ) : (
-                    posts.map(a => (
-                      <ArticleCard key={a.id} article={a} showToast={showToast} isDashboard={isOwnProfile} />
-                    ))
-                  )}
+                  {posts.length === 0 ? <p style={{ textAlign:'center', opacity:0.6, padding:40 }}>No stories yet.</p> : posts.map(a => <ArticleCard key={a.id} article={a} showToast={showToast} isDashboard={isOwnProfile} />)}
                 </div>
               )}
-
               {activeTab === 'Activity' && (
                 <div className="activity-feed">
-                  {activity.length === 0 ? (
-                    <div style={{ textAlign: 'center', padding: '60px 20px', color: '#555' }}>
-                      <p style={{ opacity: 0.6 }}>No recent activity.</p>
-                    </div>
-                  ) : (
-                    activity.map(item => (
-                      <div key={item.id} className="activity-item" style={{ borderBottom: '1px solid #222', padding: '16px 0' }}>
-                        <p style={{ color: 'var(--orange)', fontSize: '0.8rem', fontWeight: 600, textTransform: 'uppercase', marginBottom: 4 }}>Commented</p>
-                        <p style={{ color: 'white', fontSize: '0.95rem', marginBottom: 8 }}>"{item.content}"</p>
-                        <p style={{ color: 'var(--gray)', fontSize: '0.8rem' }}>On article: {item.blogId?.slice(0, 8)}...</p>
-                      </div>
-                    ))
-                  )}
+                   {activity.length === 0 ? <p style={{ textAlign:'center', opacity:0.6, padding:40 }}>No activity.</p> : activity.map(item => (
+                     <div key={item.id} className="activity-item" style={{ borderBottom: '1px solid #222', padding: '16px 0' }}>
+                        <p style={{ color: 'var(--orange)', fontSize: '0.8rem', fontWeight: 600, textTransform: 'uppercase' }}>Commented</p>
+                        <p style={{ color: 'white', fontSize: '0.95rem' }}>"{item.content}"</p>
+                        <p style={{ color: 'var(--gray)', fontSize: '0.8rem' }}>On: {item.posts?.title}</p>
+                     </div>
+                   ))}
                 </div>
               )}
-
               {activeTab === 'Likes' && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                  {likedPosts.length === 0 ? (
-                    <div style={{ textAlign: 'center', padding: '60px 20px', color: '#555' }}>
-                      <p style={{ opacity: 0.6 }}>No liked posts yet.</p>
-                    </div>
-                  ) : (
-                    likedPosts.map(a => (
-                      <ArticleCard key={a.id} article={a} showToast={showToast} />
-                    ))
-                  )}
+                   {likedPosts.length === 0 ? <p style={{ textAlign:'center', opacity:0.6, padding:40 }}>No likes.</p> : likedPosts.map(a => <ArticleCard key={a.id} article={a} showToast={showToast} />)}
                 </div>
               )}
             </div>
           </>
         )}
       </div>
-
       <BottomNav showToast={showToast} />
     </div>
   );
 }
+

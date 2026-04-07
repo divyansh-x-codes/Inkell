@@ -3,10 +3,10 @@ plugins {
 }
 
 android {
-    namespace = "com.Inktrix.app"
+    namespace = "com.inktrix.app"
     compileSdk = rootProject.ext.compileSdkVersion
     defaultConfig {
-        applicationId "com.Inktrix.app"
+        applicationId "com.inktrix.app"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1

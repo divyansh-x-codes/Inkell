@@ -18,6 +18,15 @@ import AddArticle from './pages/AddArticle';
 import BlogPage from './pages/BlogPage';
 
 import { useAuth } from "./context/AuthContext";
+import { useLocation } from 'react-router-dom';
+
+const ScrollToTop = () => {
+  const { pathname } = useLocation();
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, [pathname]);
+  return null;
+};
 
 const LoadingScreen = () => {
   const [showHint, setShowHint] = useState(false);
@@ -83,6 +92,7 @@ function App() {
 
   return (
     <ErrorBoundary><Router>
+      <ScrollToTop />
       <div className="bg-layer"></div>
       <div className="floating-icons">
         <div className="fi">✍️</div><div className="fi">📖</div><div className="fi">🔖</div>

@@ -1,4 +1,4 @@
-package com.Inktrix.app;
+package com.inktrix.app;
 
 import com.getcapacitor.BridgeActivity;
 

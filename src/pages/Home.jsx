@@ -3,7 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import BottomNav from '../components/BottomNav';
 import ArticleCard from '../components/ArticleCard';
 import { useAuth } from '../context/AuthContext';
-import { subscribeToBlogs, subscribeToFollowedBlogs, subscribeToFollowedUsers } from '../utils/firebaseData';
+import { getAIFeed } from '../utils/supabaseData';
+import { supabase } from '../supabaseClient';
 
 const getInitials = (name) => {
   if (!name) return 'U';
@@ -19,8 +20,27 @@ function FollowingBar({ userId, navigate }) {
 
   useEffect(() => {
     if (!userId) return;
-    const unsub = subscribeToFollowedUsers(userId, setFollowedUsers);
-    return () => unsub && unsub();
+    
+    const fetchFollowed = async () => {
+      const { data } = await supabase
+        .from('follows')
+        .select('following_id, profiles!following_id(*)')
+        .eq('follower_id', userId);
+      
+      if (data) {
+        setFollowedUsers(data.map(f => f.profiles));
+      }
+    };
+
+    fetchFollowed();
+
+    // Subtle realtime: if someone follows/unfollows, refresh
+    const channel = supabase
+      .channel(`followed_users_${userId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'follows', filter: `follower_id=eq.${userId}` }, fetchFollowed)
+      .subscribe();
+
+    return () => supabase.removeChannel(channel);
   }, [userId]);
 
   const [brokenImages, setBrokenImages] = useState({});
@@ -31,11 +51,18 @@ function FollowingBar({ userId, navigate }) {
   return (
     <div className="following-bar">
       <div className="stories-scroll">
+        <div className="story-item add-more" onClick={() => navigate('/search')}>
+          <div className="story-avatar plus-btn">
+            <img src="/icons8-plus-96.png" alt="add" style={{ width: 32, height: 32, opacity: 0.8 }} />
+          </div>
+          <div className="story-name">Add more</div>
+        </div>
+
         {followedUsers.map((u) => (
-          <div key={u.id} className="story-item" onClick={() => navigate(`/profile/${encodeURIComponent(u.name)}`, { state: { authorId: u.id } })}>
+          <div key={u.id} className="story-item" onClick={() => navigate(`/profile/${encodeURIComponent(u.username || u.name)}`, { state: { authorId: u.id } })}>
             <div className="story-avatar">
-              {(u.avatar || u.photoURL) && !brokenImages[u.id] ? (
-                <img src={u.avatar || u.photoURL} alt={u.name} onError={() => handleImageError(u.id)} />
+              {(u.avatar_url) && !brokenImages[u.id] ? (
+                <img src={u.avatar_url} alt={u.name} onError={() => handleImageError(u.id)} />
               ) : (
                 <div className="story-initials" style={{ background: colorForName(u.name || 'U') }}>{getInitials(u.name || 'U')}</div>
               )}
@@ -43,63 +70,102 @@ function FollowingBar({ userId, navigate }) {
             <div className="story-name">{u.name?.split(' ')[0]}</div>
           </div>
         ))}
-        
-        <div className="story-item add-more" onClick={() => navigate('/search')}>
-          <div className="story-avatar plus-btn">
-            <img src="/icons8-plus-96.png" alt="add" style={{ width: 32, height: 32, opacity: 0.8 }} />
-          </div>
-          <div className="story-name">Add more</div>
-        </div>
       </div>
     </div>
   );
 }
 
+// Module-level cache to prevent flicker when navigating back to Home
+let cachedArticles = [];
+
 export default function Home({ showToast }) {
   const navigate = useNavigate();
-  const { user, unreadCount } = useAuth();
-  const [articles, setArticles] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const { user } = useAuth();
+  const [articles, setArticles] = useState(cachedArticles);
+  const [loading, setLoading] = useState(cachedArticles.length === 0);
   const [isVisible, setIsVisible] = useState(true);
   const [lastScrollY, setLastScrollY] = useState(0);
+  const [feedType, setFeedType] = useState('foryou');
 
-  const displayName = user?.name || user?.displayName || 'User';
-  const displayAvatar = user?.avatar || user?.photoURL || null;
+  const displayName = user?.profiles?.name || user?.name || 'User';
+  const displayAvatar = user?.profiles?.avatar_url || user?.avatar_url || null;
+
   useEffect(() => {
-    const unsubscribe = subscribeToBlogs((blogs) => {
-      const sorted = [...blogs].sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
-      setArticles(sorted);
+    const loadFeed = async () => {
+      // Only show full-screen spinner on the VERY FIRST load (empty state)
+      // For every other case (re-mount, re-focus), keep existing articles visible
+      const isFirstLoad = articles.length === 0;
+      if (isFirstLoad) setLoading(true);
+
+      const data = await getAIFeed(user?.id || 'anon', feedType);
+      cachedArticles = data; // Save to global cache
+      setArticles(data);
       setLoading(false);
-    });
-    return () => unsubscribe();
-  }, []);
+    };
+
+    loadFeed();
+
+    // Real-time: instantly prepend new posts WITHOUT re-fetching the whole feed
+    const channel = supabase
+      .channel('home-feed-realtime')
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'posts' },
+        async (payload) => {
+          if (!payload.new?.id) return;
+          // Fetch full post with profile data then prepend to top
+          const { data: newPost } = await supabase
+            .from('posts')
+            .select('*, profiles(username, name, avatar_url)')
+            .eq('id', payload.new.id)
+            .single();
+          if (newPost) {
+            setArticles(prev => {
+              if (prev.find(a => a.id === newPost.id)) return prev;
+              const newFeed = [newPost, ...prev];
+              cachedArticles = newFeed; // Update cache
+              return newFeed;
+            });
+          }
+        }
+      )
+      .subscribe();
+    // Listen to local post creation (fixes optimistic rendering for large posts that might drop in realtime)
+    const handleLocalPost = (e) => {
+      const newPost = e.detail;
+      if (newPost) {
+        setArticles(prev => {
+          if (prev.find(a => a.id === newPost.id)) return prev;
+          const newFeed = [newPost, ...prev];
+          cachedArticles = newFeed; // Update cache
+          return newFeed;
+        });
+      }
+    };
+    window.addEventListener('local_post_created', handleLocalPost);
+
+    return () => {
+      supabase.removeChannel(channel);
+      window.removeEventListener('local_post_created', handleLocalPost);
+    };
+  }, [user?.id, feedType]);
 
   // Scroll logic for Topbar visibility
   useEffect(() => {
     const handleScroll = () => {
       const currentScrollY = window.scrollY;
-      
-      // Always show at the top
       if (currentScrollY < 10) {
         setIsVisible(true);
       } else if (currentScrollY > lastScrollY) {
-        // Scrolling down
         if (isVisible) setIsVisible(false);
       } else {
-        // Scrolling up
         if (!isVisible) setIsVisible(true);
       }
-      
       setLastScrollY(currentScrollY);
     };
-
     window.addEventListener('scroll', handleScroll, { passive: true });
     return () => window.removeEventListener('scroll', handleScroll);
   }, [lastScrollY, isVisible]);
-
-  const visibleArticles = articles;
-
-
 
   return (
     <div id="v-home" className="view active">
@@ -107,10 +173,8 @@ export default function Home({ showToast }) {
         <div className={`chronicle-topbar premium ${!isVisible ? 'hidden' : ''}`}>
           <div className="topbar-left">
             <div className="brand-logo" onClick={() => navigate('/')}>
-              <img src="/logo.png" alt="logo" style={{ width: 50, height: 50, borderRadius: 4 }} />
-              <svg viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" style={{ width: 14, height: 14, marginLeft: -4 }}>
-                <polyline points="6 9 12 15 18 9"></polyline>
-              </svg>
+              <img src="/logo.png" alt="logo" style={{ width: 40, height: 40, borderRadius: 8 }} />
+              <span style={{ fontWeight: 800, fontSize: '1.2rem', marginLeft: 8 }}>Inktrix</span>
             </div>
           </div>
 
@@ -121,19 +185,19 @@ export default function Home({ showToast }) {
           </div>
         </div>
 
-        <div className="feed" id="main-feed" style={{ paddingBottom: '70px' }}>
-          <FollowingBar userId={user?.uid} navigate={navigate} />
+        <div className="feed" id="main-feed" style={{ paddingTop: '20px', paddingBottom: '100px' }}>
+          <FollowingBar userId={user?.id} navigate={navigate} />
 
           <div className="article-list-container">
             {loading ? (
-              <div className="feed-status">Loading feed...</div>
-            ) : visibleArticles.length === 0 ? (
+              <div className="feed-status">Loading personalized feed...</div>
+            ) : articles.length === 0 ? (
               <div className="feed-status empty">
                 <h3>No articles yet</h3>
                 <p>Start exploring to find your favorite writers.</p>
               </div>
             ) : (
-              visibleArticles.map((article) => (
+              articles.map((article) => (
                 <ArticleCard key={article.id} article={article} showToast={showToast} />
               ))
             )}
@@ -145,3 +209,4 @@ export default function Home({ showToast }) {
     </div>
   );
 }
+

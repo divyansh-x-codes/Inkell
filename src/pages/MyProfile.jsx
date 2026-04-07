@@ -4,11 +4,11 @@ import BottomNav from '../components/BottomNav';
 import ArticleCard from '../components/ArticleCard';
 import { useAuth } from '../context/AuthContext';
 import { 
-  subscribeToUserProfile, 
-  subscribeToUserArticles, 
-  subscribeToUserActivity, 
-  subscribeToUserLikes 
-} from '../utils/firebaseData';
+  getPostsByAuthor, 
+  getLikedPosts, 
+  getUserActivity, 
+  getFollowStats 
+} from '../utils/supabaseData';
 
 const TABS = ['Activity', 'Posts', 'Likes'];
 
@@ -17,48 +17,38 @@ export default function MyProfile({ showToast }) {
   const { user } = useAuth();
   const [activeTab, setActiveTab] = useState('Posts');
   
-  const [profile, setProfile] = useState(null);
   const [posts, setPosts] = useState([]);
   const [activity, setActivity] = useState([]);
   const [likedPosts, setLikedPosts] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [stats, setStats] = useState({ followers: 0, following: 0 });
 
-  // 1. Sync Profile Metadata
   useEffect(() => {
-    if (!user?.uid) return;
-    const unsub = subscribeToUserProfile(user.uid, (p) => {
-      setProfile(p);
+    if (!user?.id) return;
+    const loadStats = async () => {
+      const s = await getFollowStats(user.id);
+      setStats(s);
       setLoading(false);
-    });
-    return () => unsub();
-  }, [user]);
-
-  // 2. Sync Tab Content
-  useEffect(() => {
-    if (!user?.uid) return;
-    
-    let unsubPosts, unsubActivity, unsubLikes;
-    
-    if (activeTab === 'Posts') {
-      unsubPosts = subscribeToUserArticles(user.uid, (data) => {
-        setPosts([...data].sort((a,b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0)));
-      });
-    } else if (activeTab === 'Activity') {
-      unsubActivity = subscribeToUserActivity(user.uid, (data) => {
-        setActivity([...data].sort((a,b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0)));
-      });
-    } else if (activeTab === 'Likes') {
-      unsubLikes = subscribeToUserLikes(user.uid, (data) => {
-        setLikedPosts([...data].sort((a,b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0)));
-      });
-    }
-
-    return () => {
-      unsubPosts?.();
-      unsubActivity?.();
-      unsubLikes?.();
     };
-  }, [user, activeTab]);
+    loadStats();
+  }, [user?.id]);
+
+  useEffect(() => {
+    if (!user?.id) return;
+    const loadTabData = async () => {
+      if (activeTab === 'Posts') {
+        const data = await getPostsByAuthor(user.id);
+        setPosts(data);
+      } else if (activeTab === 'Activity') {
+        const data = await getUserActivity(user.id);
+        setActivity(data);
+      } else if (activeTab === 'Likes') {
+        const data = await getLikedPosts(user.id);
+        setLikedPosts(data);
+      }
+    };
+    loadTabData();
+  }, [user?.id, activeTab]);
 
   const getInitials = (n) => {
     if (!n) return 'Y';
@@ -74,9 +64,10 @@ export default function MyProfile({ showToast }) {
     );
   }
 
+  const profile = user.profiles || {};
+
   return (
     <div className="profile-page app-shell">
-      {/* Top bar */}
       <div className="profile-topbar">
         <button className="tb-circle-btn" onClick={() => navigate(-1)}>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
@@ -98,45 +89,27 @@ export default function MyProfile({ showToast }) {
         <div className="profile-header-main">
           <div className="profile-title-row">
             <div className="profile-info">
-              <h1 className="profile-name-header">{profile?.name || user.name}</h1>
-              <p className="profile-handle">@{profile?.name?.toLowerCase().replace(/\s/g, '') || user.name?.toLowerCase().replace(/\s/g, '')}</p>
+              <h1 className="profile-name-header">{profile.name || profile.username || 'User'}</h1>
+              <p className="profile-handle">@{profile.username || 'handle'}</p>
             </div>
-            {profile?.avatar || user.avatar
-              ? (
-                <img
-                  src={profile?.avatar || user.avatar}
-                  alt="avatar"
-                  className="profile-avatar-large"
-                  onClick={() => navigate('/edit-profile')}
-                  style={{ cursor: 'pointer' }}
-                />
-              )
-              : (
-                <div
-                  style={{
-                    width: 90, height: 90, borderRadius: '50%', flexShrink: 0,
-                    background: profile?.color || '#e85d04', display: 'flex', alignItems: 'center',
-                    justifyContent: 'center', fontWeight: 800, fontSize: '2rem',
-                    color: 'white', marginLeft: 16, fontFamily: "'DM Sans',sans-serif",
-                    cursor: 'pointer',
-                  }}
-                  onClick={() => navigate('/edit-profile')}
-                >
-                  {getInitials(profile?.name || user.name)}
-                </div>
-              )
-            }
+            <div 
+              className="profile-avatar-large" 
+              style={{ background: '#cc4400', display:'flex', alignItems:'center', justifyContent:'center', color:'white', fontWeight:800, fontSize:'2rem', borderRadius:'50%', overflow:'hidden', cursor:'pointer' }}
+              onClick={() => navigate('/edit-profile')}
+            >
+                {profile.avatar_url ? <img src={profile.avatar_url} alt="av" style={{width:'100%', height:'100%', objectFit:'cover'}} /> : getInitials(profile.name || profile.username)}
+            </div>
           </div>
 
-          <p className="profile-bio">{profile?.bio || 'Sharing stories on Inktrix.'}</p>
+          <p className="profile-bio">{profile.bio || 'Sharing stories on Inktrix.'}</p>
           
           <div style={{ display: 'flex', gap: '20px', marginTop: '12px', marginBottom: '4px' }}>
             <div style={{ fontSize: '0.92rem', color: 'var(--white)' }}>
-              <span style={{ fontWeight: 700 }}>{profile?.followersCount || 0}</span> 
+              <span style={{ fontWeight: 700 }}>{stats.followers}</span> 
               <span style={{ color: 'var(--gray)', marginLeft: '6px' }}>Subscribers</span>
             </div>
             <div style={{ fontSize: '0.92rem', color: 'var(--white)' }}>
-              <span style={{ fontWeight: 700 }}>{profile?.followingCount || 0}</span> 
+              <span style={{ fontWeight: 700 }}>{stats.following}</span> 
               <span style={{ color: 'var(--gray)', marginLeft: '6px' }}>Following</span>
             </div>
           </div>
@@ -149,16 +122,9 @@ export default function MyProfile({ showToast }) {
             >
               Edit Profile
             </button>
-            <button className="btn-share-icon" onClick={() => { navigator.clipboard.writeText(window.location.href); showToast('Profile link copied!'); }}>
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ width: '20px', height: '20px' }}>
-                <line x1="22" y1="2" x2="11" y2="13"></line>
-                <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
-              </svg>
-            </button>
           </div>
         </div>
 
-        {/* Tabs */}
         <div className="profile-tabs">
           {TABS.map(tab => (
             <div
@@ -171,7 +137,6 @@ export default function MyProfile({ showToast }) {
           ))}
         </div>
 
-        {/* Content */}
         <div className="profile-feed">
           {activeTab === 'Activity' && (
             activity.length === 0
@@ -183,7 +148,7 @@ export default function MyProfile({ showToast }) {
                   key={i}
                   className="profile-post"
                   style={{ cursor: 'pointer' }}
-                  onClick={() => navigate(`/comments/${c.blogId}`)}
+                  onClick={() => navigate(`/comments/${c.post_id}`)}
                 >
                   <div style={{ fontSize: '0.75rem', color: '#e85d04', fontWeight: 700, marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
                     Activity
@@ -191,7 +156,7 @@ export default function MyProfile({ showToast }) {
                   <div style={{ color: '#aaa', fontSize: '0.9rem', marginBottom: 8 }}>
                     💬 "{c.content}"
                   </div>
-                  <div style={{ color: '#555', fontSize: '0.8rem' }}>{c.createdAt?.toDate ? new Date(c.createdAt.toDate()).toLocaleDateString() : 'Just now'}</div>
+                  <div style={{ color: '#555', fontSize: '0.8rem' }}>{c.created_at ? new Date(c.created_at).toLocaleDateString() : 'Just now'}</div>
                 </div>
               ))
           )}
@@ -222,3 +187,4 @@ export default function MyProfile({ showToast }) {
     </div>
   );
 }
+

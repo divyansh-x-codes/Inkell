@@ -2,6 +2,9 @@
 <resources>
     <string name="app_name">Inktrix</string>
     <string name="title_activity_main">Inktrix</string>
-    <string name="package_name">com.Inktrix.app</string>
-    <string name="custom_url_scheme">com.Inktrix.app</string>
+    <string name="package_name">com.inktrix.app</string>
+    <string name="custom_url_scheme">com.inktrix.app</string>
+    <!-- Add this for Google Auth plugin -->
+    <string name="google_client_id">181046189807-6qnj0ksivgetpgvfpucrpkt3v0f0q96d.apps.googleusercontent.com</string>
 </resources>
+

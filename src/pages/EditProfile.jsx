@@ -1,29 +1,29 @@
 import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
-import { db } from '../firebase';
+import { supabase } from '../supabaseClient';
 
 export default function EditProfile({ showToast }) {
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, refreshUser } = useAuth();
   const fileRef = useRef(null);
 
-  const [name, setName] = useState(user?.name || '');
-  const [handle, setHandle] = useState(user?.handle || '');
-  const [bio, setBio] = useState(user?.bio || '');
-  const [avatar, setAvatar] = useState(user?.avatar || '');
-  const [color] = useState(user?.color || '#e85d04');
+  const profile = user?.profiles || {};
+
+  const [name, setName] = useState(profile.name || '');
+  const [username, setUsername] = useState(profile.username || '');
+  const [bio, setBio] = useState(profile.bio || '');
+  const [avatar, setAvatar] = useState(profile.avatar_url || '');
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    if (user) {
-      setName(user.name || '');
-      setHandle(user.handle || '');
-      setBio(user.bio || '');
-      setAvatar(user.avatar || '');
+    if (user?.profiles) {
+      setName(user.profiles.name || '');
+      setUsername(user.profiles.username || '');
+      setBio(user.profiles.bio || '');
+      setAvatar(user.profiles.avatar_url || '');
     }
-  }, [user]);
+  }, [user?.profiles]);
 
   const getInitials = (n) => {
     if (!n) return 'Y';
@@ -31,7 +31,7 @@ export default function EditProfile({ showToast }) {
     return s.length > 1 ? (s[0][0] + s[1][0]).toUpperCase() : n[0].toUpperCase();
   };
 
-  const compressImage = (dataUrl, maxWidth = 400, maxHeight = 400) => {
+  const compressImage = (dataUrl, maxWidth = 160, maxHeight = 160) => {
     return new Promise((resolve) => {
       const img = new Image();
       img.onload = () => {
@@ -55,7 +55,8 @@ export default function EditProfile({ showToast }) {
         canvas.height = height;
         const ctx = canvas.getContext('2d');
         ctx.drawImage(img, 0, 0, width, height);
-        resolve(canvas.toDataURL('image/jpeg', 0.7)); // High compression
+        // Use lower quality for faster saving
+        resolve(canvas.toDataURL('image/jpeg', 0.5)); 
       };
       img.src = dataUrl;
     });
@@ -65,7 +66,6 @@ export default function EditProfile({ showToast }) {
     const file = e.target.files[0];
     if (!file) return;
     
-    // Early filter: 10MB (to prevent memory crash before compression)
     if (file.size > 10 * 1024 * 1024) {
       showToast('Photo too large (max 10MB)');
       return;
@@ -73,6 +73,8 @@ export default function EditProfile({ showToast }) {
 
     const reader = new FileReader();
     reader.onload = async (ev) => {
+      // Show local preview immediately then compress
+      setAvatar(ev.target.result);
       const compressed = await compressImage(ev.target.result);
       setAvatar(compressed);
       showToast('Photo optimized!');
@@ -82,32 +84,43 @@ export default function EditProfile({ showToast }) {
 
   const handleSave = async () => {
     if (!name.trim()) { showToast('Name cannot be empty'); return; }
-    if (!user?.uid) { showToast('Please login first'); return; }
+    if (!user?.id) { showToast('Please login first'); return; }
     
     setSaving(true);
-    try {
-      const userRef = doc(db, 'users', user.uid);
-      await setDoc(userRef, {
+    
+    // OPTIMISTIC NAVIGATION: Don't wait for round-trip
+    const updatePromise = supabase
+      .from('profiles')
+      .update({
         name: name.trim(),
-        handle: handle || `@${name.toLowerCase().replace(/\s/g, '')}`,
-        bio,
-        avatar,
-        updatedAt: serverTimestamp(),
-      }, { merge: true });
-      
-      showToast('Profile saved!');
-      navigate('/my-profile');
-    } catch (err) {
-      console.error("Save failed:", err);
-      showToast('Failed to save profile');
-    } finally {
+        username: username.replace('@', '').toLowerCase().trim(),
+        bio: bio.trim(),
+        avatar_url: avatar,
+      })
+      .eq('id', user.id);
+    
+    updatePromise.then(async ({ error }) => {
+      if (error) {
+        showToast('Error saving: ' + error.message);
+      } else {
+        await refreshUser();
+        console.log("Profile refresh complete");
+      }
+    }).catch(err => {
+      showToast('Connection error. Profile might not have saved.');
+    }).finally(() => {
       setSaving(false);
-    }
+    });
+
+    // Immediate UI feedback
+    setTimeout(() => {
+      showToast('🎉 Profile updated!');
+      navigate('/my-profile', { replace: true });
+    }, 100);
   };
 
   return (
     <div className="editprofile-page app-shell">
-      {/* Header */}
       <div className="editprofile-header">
         <button className="tb-circle-btn" onClick={() => navigate(-1)}>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
@@ -115,23 +128,17 @@ export default function EditProfile({ showToast }) {
           </svg>
         </button>
         <span className="editprofile-title">Edit Profile</span>
-        <button
-          className="editprofile-save-btn"
-          onClick={handleSave}
-          disabled={saving}
-        >
+        <button className="editprofile-save-btn" onClick={handleSave} disabled={saving}>
           {saving ? '…' : 'Save'}
         </button>
       </div>
 
       <div className="editprofile-scroll">
-
-        {/* Avatar section */}
         <div className="editprofile-avatar-section">
           <div className="editprofile-avatar-wrap" onClick={() => fileRef.current.click()}>
             {avatar
               ? <img src={avatar} alt="avatar" className="editprofile-avatar-img" />
-              : <div className="editprofile-avatar-placeholder" style={{ background: color }}>
+              : <div className="editprofile-avatar-placeholder" style={{ background: '#cc4400' }}>
                   {getInitials(name)}
                 </div>
             }
@@ -146,62 +153,33 @@ export default function EditProfile({ showToast }) {
             Change photo
           </button>
           {avatar && (
-            <button
-              className="editprofile-remove-photo-btn"
-              onClick={() => { setAvatar(null); showToast('Photo removed'); }}
-            >
+            <button className="editprofile-remove-photo-btn" onClick={() => { setAvatar(null); showToast('Photo removed'); }}>
               Remove photo
             </button>
           )}
-          <input
-            type="file"
-            ref={fileRef}
-            accept="image/*"
-            style={{ display: 'none' }}
-            onChange={handlePhotoSelect}
-          />
+          <input type="file" ref={fileRef} accept="image/*" style={{ display: 'none' }} onChange={handlePhotoSelect} />
         </div>
 
-        {/* Fields */}
         <div className="editprofile-fields">
           <div className="editprofile-field-group">
             <label className="editprofile-label">Display Name</label>
-            <input
-              className="editprofile-input"
-              value={name}
-              onChange={e => setName(e.target.value)}
-              placeholder="Your name"
-              maxLength={50}
-            />
+            <input className="editprofile-input" value={name} onChange={e => setName(e.target.value)} placeholder="Your name" maxLength={50} />
             <div className="editprofile-char-hint">{name.length}/50</div>
           </div>
 
           <div className="editprofile-field-group">
             <label className="editprofile-label">Username</label>
-            <input
-              className="editprofile-input"
-              value={handle}
-              onChange={e => setHandle(e.target.value.startsWith('@') ? e.target.value : '@' + e.target.value)}
-              placeholder="@username"
-              maxLength={30}
-            />
+            <input className="editprofile-input" value={username.startsWith('@') ? username : (username ? '@' + username : '')} onChange={e => setUsername(e.target.value)} placeholder="@username" maxLength={30} />
           </div>
 
           <div className="editprofile-field-group">
             <label className="editprofile-label">Bio</label>
-            <textarea
-              className="editprofile-textarea"
-              value={bio}
-              onChange={e => setBio(e.target.value)}
-              placeholder="Tell people about yourself..."
-              rows={3}
-              maxLength={160}
-            />
+            <textarea className="editprofile-textarea" value={bio} onChange={e => setBio(e.target.value)} placeholder="Tell people about yourself..." rows={3} maxLength={160} />
             <div className="editprofile-char-hint">{bio.length}/160</div>
           </div>
         </div>
-
       </div>
     </div>
   );
 }
+

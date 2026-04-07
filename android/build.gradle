@@ -18,10 +18,7 @@ buildscript {
 apply from: "variables.gradle"
 
 allprojects {
-    repositories {
-        google()
-        mavenCentral()
-    }
+    // Shared configurations for all modules can go here
 }
 
 task clean(type: Delete) {
