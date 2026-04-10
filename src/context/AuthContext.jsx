@@ -31,28 +31,31 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
   const [unreadCount, setUnreadCount] = useState(0);
 
-  // Fetch and sync user with Firestore profile
+  // Fetch and sync user with Firestore profile in background
   const fetchAndSetUser = async (fbUser) => {
+    // 1. SET BASIC USER IMMEDIATELY
+    const basicUser = { 
+      uid: fbUser.uid, 
+      id: fbUser.uid,
+      email: fbUser.email,
+      displayName: fbUser.displayName,
+      photoURL: fbUser.photoURL,
+      isAnonymous: fbUser.isAnonymous,
+      emailVerified: fbUser.emailVerified,
+      profiles: null // Loaded in background
+    };
+    setUser(basicUser);
+    setLoading(false); // UI UNLOCKED INSTANTLY
+
+    // 2. FETCH PROFILE IN BACKGROUND
     const profileRef = doc(db, 'profiles', fbUser.uid);
     try {
       const profileSnap = await getDoc(profileRef);
-      
-      // EXPLICIT MAPPING: Ensure uid and id are always present
-      // Firebase User objects can have non-enumerable properties that get lost in spread
-      let userData = { 
-        uid: fbUser.uid, 
-        id: fbUser.uid,
-        email: fbUser.email,
-        displayName: fbUser.displayName,
-        photoURL: fbUser.photoURL,
-        isAnonymous: fbUser.isAnonymous,
-        emailVerified: fbUser.emailVerified
-      };
+      let userData = { ...basicUser };
 
       if (profileSnap.exists()) {
         userData.profiles = profileSnap.data();
       } else {
-        // PROFILE MISSING: Create a basic profile automatically
         const emailPrefix = fbUser.email ? fbUser.email.split('@')[0] : `user_${fbUser.uid.substring(0, 5)}`;
         const newProfile = {
           id: fbUser.uid,
@@ -65,13 +68,9 @@ export const AuthProvider = ({ children }) => {
         await setDoc(profileRef, newProfile);
         userData.profiles = newProfile;
       }
-
-      setUser(userData);
+      setUser(userData); // Update with full profile when ready
     } catch (err) {
-      console.error("Profile sync failed:", err);
-      setUser(fbUser); // Fallback to basic user
-    } finally {
-      setLoading(false); // Atomic unlock after everything is ready
+      console.error("Profile sync failed in background:", err);
     }
   };
 
@@ -81,14 +80,10 @@ export const AuthProvider = ({ children }) => {
     // 1. Initial State Sync
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       if (!isMounted) return;
-      console.log('Firebase Auth signal detected:', !!firebaseUser);
-      
       if (firebaseUser) {
-        console.log('User signed in, locking UI for profile sync...');
-        setLoading(true);
+        console.log('User signed in, performing background sync...');
         await fetchAndSetUser(firebaseUser);
       } else {
-        console.log('No user detected, unlocking UI...');
         setUser(null);
         setLoading(false);
       }

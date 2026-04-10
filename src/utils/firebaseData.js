@@ -51,39 +51,8 @@ export const subscribeToPosts = (setPosts) => {
   });
 };
 
-// ─── AI Feed (Merged with Mocks) ────────────────────────────────────────────
 
-export const getAIFeed = async (userId, type = 'foryou') => {
-  try {
-    const q = query(collection(db, 'posts'), orderBy('created_at', 'desc'), limit(10));
-    const snapshot = await getDocs(q);
-    
-    const realPosts = await Promise.all(snapshot.docs.map(async (docSnap) => {
-      const data = docSnap.data();
-      let profile = data.profiles;
-      if (!profile && data.user_id) {
-        const pDoc = await getDoc(doc(db, 'profiles', data.user_id));
-        profile = pDoc.exists() ? pDoc.data() : null;
-      }
-      return { 
-        id: docSnap.id, 
-        ...data, 
-        profiles: profile,
-        created_at: data.created_at?.toDate()?.toISOString() || new Date().toISOString()
-      };
-    }));
-
-    if (realPosts.length > 0) {
-      const sortedReal = realPosts.sort((a,b) => new Date(b.created_at) - new Date(a.created_at));
-      return sortedReal;
-    }
-    return [];
-  } catch (e) {
-    console.error("Firebase getAIFeed error:", e);
-    return MOCK_POSTS;
-  }
-};
-
+// Real-time feed is now handled exclusively via subscribeToPosts
 // ─── Profiles ───────────────────────────────────────────────────────────────
 
 export const getUserProfile = async (uid) => {

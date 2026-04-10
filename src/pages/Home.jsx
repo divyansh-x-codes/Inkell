@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import SkeletonArticle from '../components/SkeletonArticle.jsx';
+
 
 import BottomNav from '../components/BottomNav';
 import ArticleCard from '../components/ArticleCard';
@@ -94,69 +94,12 @@ export default function Home({ showToast }) {
   useEffect(() => {
     let cancelled = false;
 
-    const loadFeed = async () => {
-      // Reliability: prioritize UID over ID
-      const currentUid = user?.uid || user?.id || 'anon';
-      const isFirstLoad = articles.length === 0;
-      
-      if (isFirstLoad) setLoading(true);
-      setFeedError(false);
-
-      try {
-        const data = await getAIFeed(currentUid, feedType);
-        
-        if (!cancelled && data) {
-          setArticles(prev => {
-            // Priority: anything already on screen (Real-time) + NEW batch data
-            const existingIds = new Set(prev.map(a => a.id));
-            const trulyNew = data.filter(d => !existingIds.has(d.id));
-            
-            // If we have real posts on screen, we don't want to show mocks at the top 
-            // unless the entire feed is empty.
-            let combined = [...prev, ...trulyNew];
-            
-            // --- GUARANTEED VISIBILITY: Merge with locally stored pending posts ---
-            try {
-              const pending = JSON.parse(localStorage.getItem('inktrix_pending_posts') || '[]');
-              if (pending.length > 0) {
-                const updatedIds = new Set(combined.map(c => c.id));
-                const uniquePending = pending.filter(p => !updatedIds.has(p.id));
-                combined = [...uniquePending, ...combined];
-              }
-            } catch (e) { console.error("Pending merge error:", e); }
-
-            cachedArticles = combined;
-            return combined;
-          });
-          setLoading(false);
-          setFeedError(false);
-        }
-      } catch (err) {
-        console.error('Feed load failed:', err);
-        if (!cancelled) {
-          if (cachedArticles.length > 0) {
-            setArticles(cachedArticles);
-          } else {
-            setFeedError(true);
-          }
-          setLoading(false);
-        }
-      }
-    };
-
-    loadFeed();
-
+    // 100% Real-time Subscription (Strict Action)
     const unsubscribePosts = subscribeToPosts((newPosts) => {
-      if (!cancelled && newPosts && newPosts.length > 0) {
-        setArticles(prev => {
-          const seenIds = new Set(prev.map(a => a.id));
-          const filteredNew = newPosts.filter(p => !seenIds.has(p.id));
-          if (filteredNew.length === 0) return prev;
-          
-          const combined = [...filteredNew, ...prev];
-          cachedArticles = combined;
-          return combined;
-        });
+      if (!cancelled && newPosts) {
+        setArticles(newPosts);
+        setLoading(false);
+        cachedArticles = newPosts;
       }
     });
 
@@ -164,7 +107,7 @@ export default function Home({ showToast }) {
       cancelled = true;
       unsubscribePosts();
     };
-  }, [user?.uid, user?.id, feedType, retryKey]);
+  }, [retryKey]);
 
   // Scroll logic for Topbar visibility
   useEffect(() => {
@@ -207,12 +150,10 @@ export default function Home({ showToast }) {
 
           <div className="article-list-container">
             {loading ? (
-
-              <>
-                <SkeletonArticle />
-                <SkeletonArticle />
-                <SkeletonArticle />
-              </>
+              <div className="feed-status empty">
+                <h3>Connecting...</h3>
+                <p>Establishing real-time link to feed</p>
+              </div>
             ) : feedError ? (
               <div className="feed-status empty">
                 <h3>Couldn't load feed</h3>

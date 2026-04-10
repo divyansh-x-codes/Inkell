@@ -1,5 +1,5 @@
 import { initializeApp } from "firebase/app";
-import { getAuth } from "firebase/auth";
+import { getAuth, setPersistence, browserLocalPersistence } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 import { getAnalytics } from "firebase/analytics";
 
@@ -18,6 +18,10 @@ const firebaseConfig = {
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
+
+// Strict Persistence Lockdown
+setPersistence(auth, browserLocalPersistence).catch(err => console.error("Persistence lock failed:", err));
+
 const db = getFirestore(app);
 const analytics = typeof window !== 'undefined' ? getAnalytics(app) : null;
 
