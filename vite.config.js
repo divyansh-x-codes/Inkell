@@ -8,4 +8,7 @@ export default defineConfig({
     host: '0.0.0.0',  // Allow connections from Android emulator
     port: 5173,
   },
+  optimizeDeps: {
+    include: ['firebase/app', 'firebase/firestore', 'firebase/auth']
+  }
 })

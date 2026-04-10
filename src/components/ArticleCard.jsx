@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { supabase } from '../supabaseClient';
+import { db } from '../firebaseConfig';
+import { doc, onSnapshot } from 'firebase/firestore';
 import {
   toggleLike,
   subscribeToLikes,
@@ -10,7 +11,7 @@ import {
   isFollowing,
   toggleSavePost,
   isPostSaved,
-} from '../utils/supabaseData';
+} from '../utils/firebaseData';
 
 const avatarColors = ['#cc4400','#2b9348','#7046a0','#1a6fa8','#c0392b','#16a085'];
 const colorForName = (name) => avatarColors[(name||'A').charCodeAt(0) % avatarColors.length];
@@ -28,50 +29,50 @@ export default function ArticleCard({ article, showToast, isDashboard }) {
   const [commentsCount, setCommentsCount] = useState(article.comments_count || 0);
 
   useEffect(() => {
-    if (!id) return;
-    const unsub = subscribeToLikes(id, setLiked, setLikesCount);
-    return () => unsub();
-  }, [id]);
+    // SECURITY: If it's a mock post, skip real-time DB listeners
+    if (!id || article.is_mock) return;
 
-  useEffect(() => {
-    if (!id) return;
+    const unsubLikes = subscribeToLikes(id, setLiked, setLikesCount, user?.uid);
     
-    // Subscribe to post changes (for comment count)
-    const channel = supabase
-      .channel(`post_updates_${id}`)
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'posts', filter: `id=eq.${id}` }, (payload) => {
-        setCommentsCount(payload.new.comments_count);
-      })
-      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'posts', filter: `id=eq.${id}` }, () => {
+    // Subscribe to post changes (for comment count and deletions)
+    const unsubPost = onSnapshot(doc(db, 'posts', id), (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        setCommentsCount(data.comments_count || 0);
+      } else {
+        // If it was a real post and is now gone, hide it
         setIsDeleted(true);
-      })
-      .subscribe();
+      }
+    });
 
-    return () => supabase.removeChannel(channel);
-  }, [id]);
+    return () => {
+      unsubLikes();
+      unsubPost();
+    };
+  }, [id, user?.uid, article.is_mock]);
 
   useEffect(() => {
-    if (user?.id && id) {
+    if (user?.uid && id) {
       // Check follow status
-      isFollowing(user.id, article.user_id).then(setSubscribed);
+      isFollowing(user.uid, article.user_id).then(setSubscribed);
       
       // Check saved status
-      isPostSaved(id, user.id).then(setSaved);
+      isPostSaved(id, user.uid).then(setSaved);
     }
-  }, [user?.id, id, article.user_id]);
+  }, [user?.uid, id, article.user_id]);
 
   if (isDeleted) return null;
 
   const handleLike = async (e) => {
     e.stopPropagation();
     if (!user) { showToast('Login to like'); navigate('/login'); return; }
-    await toggleLike(id, user.id);
+    await toggleLike(id, user.uid);
   };
 
   const handleSave = async (e) => {
     e.stopPropagation();
     if (!user) { showToast('Login to save'); navigate('/login'); return; }
-    const { saved: newState, error } = await toggleSavePost(id, user.id);
+    const { saved: newState, error } = await toggleSavePost(id, user.uid);
     if (!error) {
       setSaved(newState);
       showToast(newState ? 'Saved to bookmarks' : 'Removed from bookmarks');
@@ -83,11 +84,11 @@ export default function ArticleCard({ article, showToast, isDashboard }) {
     if (!user) { showToast('Login to follow'); navigate('/login'); return; }
     if (subscribed) {
       setSubscribed(false);
-      await unfollowUser(user.id, article.user_id);
+      await unfollowUser(user.uid, article.user_id);
       showToast('Unfollowed');
     } else {
       setSubscribed(true);
-      await followUser(user.id, article.user_id);
+      await followUser(user.uid, article.user_id);
       showToast(`Following ${authorName}!`);
     }
   };
@@ -134,7 +135,7 @@ export default function ArticleCard({ article, showToast, isDashboard }) {
         </div>
 
         <div className="sc-intent">
-          {article.tagline || "One of the best articles I've read this year <3"}
+          {article.tagline || article.title}
         </div>
 
         <div className="sc-main-card">
@@ -151,7 +152,7 @@ export default function ArticleCard({ article, showToast, isDashboard }) {
                 <span className="sc-pub-name">{article.category || 'Inktrix MAGAZINE'}</span>
              </div>
              <h2 className="sc-title">{article.title}</h2>
-             <p className="sc-excerpt">{article.tagline || article.content?.substring(0, 100) + '...'}</p>
+             <p className="sc-excerpt">{article.tagline || (article.content ? article.content.substring(0, 100) + '...' : '')}</p>
           </div>
 
           <button className={`sc-save-btn ${saved ? 'active' : ''}`} onClick={handleSave}>
@@ -192,4 +193,5 @@ export default function ArticleCard({ article, showToast, isDashboard }) {
       </div>
   );
 }
+
 

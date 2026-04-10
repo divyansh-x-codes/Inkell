@@ -1,12 +1,12 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { subscribeToComments, addComment, deleteComment, getPost } from '../utils/supabaseData';
+import { subscribeToComments, addComment, deleteComment, getPost } from '../utils/firebaseData';
 
 const getInitials = (name) => {
   if (!name) return 'U';
   const s = name.trim().split(' ');
-  return s.length > 1 ? (s[0][0] + s[1][0]).toUpperCase() : name[0].toUpperCase();
+  return s.length > 1 ? (s[0][0] + (s[1][0] || '')).toUpperCase() : name[0].toUpperCase();
 };
 
 const avatarColors = ['#cc4400', '#2b9348', '#7046a0', '#1a6fa8', '#c0392b', '#16a085'];
@@ -51,7 +51,7 @@ export default function Comments({ showToast }) {
     const content = newComment.trim();
     setNewComment('');
 
-    const result = await addComment(id, user.id, content);
+    const result = await addComment(id, user.uid, content);
     if (result.error) {
       showToast('Failed to post comment');
       setNewComment(content); 
@@ -145,7 +145,7 @@ export default function Comments({ showToast }) {
                         {c.created_at ? new Date(c.created_at).toLocaleDateString() : 'Just now'}
                       </span>
                     </div>
-                    {user && c.user_id === user.id && (
+                    {user && c.user_id === user.uid && (
                       <button className="del-btn" onClick={() => handleDelete(c.id)} style={{marginLeft: 'auto', background: 'none', border: 'none', color: '#666', cursor: 'pointer', padding: '4px'}}>
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" style={{width: 17, height: 17}}>
                           <polyline points="3 6 5 6 21 6"></polyline>
@@ -198,4 +198,5 @@ export default function Comments({ showToast }) {
     </div>
   );
 }
+
 

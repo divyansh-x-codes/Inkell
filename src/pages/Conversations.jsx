@@ -2,16 +2,17 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import BottomNav from '../components/BottomNav';
 import { useAuth } from '../context/AuthContext';
-import { supabase } from '../supabaseClient';
+import { db } from '../firebaseConfig';
+import { collection, query, where, getDocs, limit } from 'firebase/firestore';
 import {
   subscribeToConversations,
   getOrCreateConversation
-} from '../utils/supabaseData';
+} from '../utils/firebaseData';
 
 const getInitials = (name) => {
   if (!name) return 'U';
   const s = name.trim().split(' ');
-  return s.length > 1 ? (s[0][0] + s[1][0]).toUpperCase() : name[0].toUpperCase();
+  return s.length > 1 ? (s[0][0] + (s[1][0] || '')[0]).toUpperCase() : name[0].toUpperCase();
 };
 
 const avatarColors = ['#cc4400','#2b9348','#7046a0','#1a6fa8','#c0392b','#16a085'];
@@ -30,37 +31,48 @@ export default function Conversations({ showToast }) {
   const [brokenImages, setBrokenImages] = useState({});
 
   useEffect(() => {
-    if (!user?.id) {
+    if (!user?.uid) {
       setLoading(false);
       return;
     }
     setLoading(true);
-    const unsubscribe = subscribeToConversations(user.id, (data) => {
+    const unsubscribe = subscribeToConversations(user.uid, (data) => {
       setConversations(data);
       setLoading(false);
     });
     
     return () => unsubscribe();
-  }, [user?.id]);
+  }, [user?.uid]);
 
   useEffect(() => {
     const delayDebounceFn = setTimeout(async () => {
       if (searchQuery.length > 1) {
         setIsSearching(true);
-        const { data } = await supabase
-          .from('profiles')
-          .select('*')
-          .or(`name.ilike.%${searchQuery}%,username.ilike.%${searchQuery}%`)
-          .neq('id', user?.id)
-          .limit(10);
-        setUserResults(data || []);
-        setIsSearching(false);
+        try {
+          // Simple client-side search for demo (fetch some and filter)
+          const q = query(collection(db, 'profiles'), limit(100));
+          const snap = await getDocs(q);
+          const results = snap.docs
+            .map(d => ({ id: d.id, ...d.data() }))
+            .filter(p => 
+              p.id !== user?.uid && 
+              ((p.name || '').toLowerCase().includes(searchQuery.toLowerCase()) || 
+               (p.username || '').toLowerCase().includes(searchQuery.toLowerCase()))
+            )
+            .slice(0, 10);
+            
+          setUserResults(results);
+        } catch (e) {
+          console.error("Search error:", e);
+        } finally {
+          setIsSearching(false);
+        }
       } else {
         setUserResults([]);
       }
     }, 400);
     return () => clearTimeout(delayDebounceFn);
-  }, [searchQuery, user?.id]);
+  }, [searchQuery, user?.uid]);
 
   const getTimeAgo = (dateStr) => {
     if (!dateStr) return '';
@@ -89,7 +101,7 @@ export default function Conversations({ showToast }) {
   };
 
   const startNewChat = async (recipient) => {
-    const convoId = await getOrCreateConversation(user.id, recipient.id);
+    const convoId = await getOrCreateConversation(user.uid, recipient.id);
     if (!convoId) {
       showToast('Failed to start chat');
       return;
@@ -206,7 +218,7 @@ export default function Conversations({ showToast }) {
                       </div>
                       <div className="conv-preview-row">
                         <p className="conv-preview">
-                          {conv.lastSenderId === user.id ? `You: ${conv.lastMessage}` : conv.lastMessage}
+                          {conv.lastSenderId === user.uid ? `You: ${conv.lastMessage}` : conv.lastMessage}
                         </p>
                       </div>
                     </div>

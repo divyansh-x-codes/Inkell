@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { supabase } from '../supabaseClient';
+import { updateProfile } from '../utils/firebaseData';
 
 export default function EditProfile({ showToast }) {
   const navigate = useNavigate();
@@ -28,7 +28,7 @@ export default function EditProfile({ showToast }) {
   const getInitials = (n) => {
     if (!n) return 'Y';
     const s = n.trim().split(' ');
-    return s.length > 1 ? (s[0][0] + s[1][0]).toUpperCase() : n[0].toUpperCase();
+    return s.length > 1 ? (s[0][0] + (s[1][0] || '')[0]).toUpperCase() : n[0].toUpperCase();
   };
 
   const compressImage = (dataUrl, maxWidth = 160, maxHeight = 160) => {
@@ -55,7 +55,6 @@ export default function EditProfile({ showToast }) {
         canvas.height = height;
         const ctx = canvas.getContext('2d');
         ctx.drawImage(img, 0, 0, width, height);
-        // Use lower quality for faster saving
         resolve(canvas.toDataURL('image/jpeg', 0.5)); 
       };
       img.src = dataUrl;
@@ -73,7 +72,6 @@ export default function EditProfile({ showToast }) {
 
     const reader = new FileReader();
     reader.onload = async (ev) => {
-      // Show local preview immediately then compress
       setAvatar(ev.target.result);
       const compressed = await compressImage(ev.target.result);
       setAvatar(compressed);
@@ -84,39 +82,31 @@ export default function EditProfile({ showToast }) {
 
   const handleSave = async () => {
     if (!name.trim()) { showToast('Name cannot be empty'); return; }
-    if (!user?.id) { showToast('Please login first'); return; }
+    if (!user?.uid) { showToast('Please login first'); return; }
     
     setSaving(true);
     
-    // OPTIMISTIC NAVIGATION: Don't wait for round-trip
-    const updatePromise = supabase
-      .from('profiles')
-      .update({
+    try {
+      const { error } = await updateProfile(user.uid, {
         name: name.trim(),
         username: username.replace('@', '').toLowerCase().trim(),
         bio: bio.trim(),
         avatar_url: avatar,
-      })
-      .eq('id', user.id);
-    
-    updatePromise.then(async ({ error }) => {
+      });
+      
       if (error) {
         showToast('Error saving: ' + error.message);
       } else {
         await refreshUser();
-        console.log("Profile refresh complete");
+        showToast('🎉 Profile updated!');
+        navigate('/my-profile', { replace: true });
       }
-    }).catch(err => {
+    } catch (err) {
+      console.error(err);
       showToast('Connection error. Profile might not have saved.');
-    }).finally(() => {
+    } finally {
       setSaving(false);
-    });
-
-    // Immediate UI feedback
-    setTimeout(() => {
-      showToast('🎉 Profile updated!');
-      navigate('/my-profile', { replace: true });
-    }, 100);
+    }
   };
 
   return (
@@ -182,4 +172,5 @@ export default function EditProfile({ showToast }) {
     </div>
   );
 }
+
 

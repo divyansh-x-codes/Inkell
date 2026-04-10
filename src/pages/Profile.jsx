@@ -1,10 +1,12 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
+import PremiumLoader from '../components/PremiumLoader';
 import BottomNav from '../components/BottomNav';
 import ArticleCard from '../components/ArticleCard';
 import SubscribeModal from '../components/SubscribeModal';
 import { useAuth } from '../context/AuthContext';
-import { supabase } from '../supabaseClient';
+import { db } from '../firebaseConfig';
+import { collection, query, where, getDocs, doc, onSnapshot } from 'firebase/firestore';
 import {
   getUserProfile,
   getPostsByAuthor,
@@ -14,7 +16,7 @@ import {
   followUser,
   unfollowUser,
   isFollowing
-} from '../utils/supabaseData';
+} from '../utils/firebaseData';
 
 const VerifiedIcon = ({ size = 20 }) => (
   <svg viewBox="0 0 24 24" fill="none" stroke="#f4622a" strokeWidth="2" style={{ width: size, height: size }}>
@@ -54,9 +56,10 @@ export default function Profile({ showToast }) {
     const fetchProfile = async () => {
       let uid = authorId;
       if (!uid && decodedName) {
-        // Try looking up by username
-        const { data } = await supabase.from('profiles').select('id').eq('username', decodedName).single();
-        uid = data?.id;
+        // Try looking up by username in Firestore
+        const q = query(collection(db, 'profiles'), where('username', '==', decodedName.toLowerCase()));
+        const snap = await getDocs(q);
+        uid = snap.docs[0]?.id;
       }
 
       if (!uid) {
@@ -67,20 +70,20 @@ export default function Profile({ showToast }) {
 
       setLoading(true);
       const p = await getUserProfile(uid);
-      setProfile(p);
+      setProfile(p ? { ...p, id: uid } : { name: decodedName, id: uid });
       
       const s = await getFollowStats(uid);
       setStats(s);
 
-      if (user?.id) {
-        const f = await isFollowing(user.id, uid);
+      if (user?.uid) {
+        const f = await isFollowing(user.uid, uid);
         setFollowed(f);
       }
       setLoading(false);
     };
 
     fetchProfile();
-  }, [authorId, decodedName, user?.id]);
+  }, [authorId, decodedName, user?.uid]);
 
   useEffect(() => {
     if (!profile?.id) return;
@@ -119,25 +122,33 @@ export default function Profile({ showToast }) {
     if (!user) { showToast('Login to follow'); navigate('/login'); return; }
     if (followed) {
       setFollowed(false);
-      await unfollowUser(user.id, profile.id);
+      await unfollowUser(user.uid, profile.id);
       setStats(prev => ({ ...prev, followers: Math.max(0, prev.followers - 1) }));
       showToast('Unfollowed');
     } else {
       setFollowed(true);
-      await followUser(user.id, profile.id);
+      await followUser(user.uid, profile.id);
       setStats(prev => ({ ...prev, followers: prev.followers + 1 }));
       showToast(`Following ${profile?.name || profile?.username}`);
     }
   };
 
   const openChat = () => {
-    showToast('Direct messaging coming to Supabase soon!');
+    showToast('Messaging transitioned to Firebase Chat!');
+    navigate('/conversations');
   };
 
   const TABS = ['Posts', 'Activity', 'Likes'];
-  const isOwnProfile = user && profile?.id === user.id;
+  const isOwnProfile = user && profile?.id === user.uid;
 
-  if (loading) return <div className="app-shell" style={{ display:'flex', alignItems:'center', justifyContent:'center', height:'100vh', background:'var(--paper-bg)' }}>Loading...</div>;
+  if (loading) {
+    return (
+      <div className="app-shell" style={{ display:'flex', flexDirection: 'column', alignItems:'center', justifyContent:'center', height:'100vh', background:'#000' }}>
+        <PremiumLoader size={48} color="var(--orange)" thickness={3} />
+        <p style={{ marginTop: 16, color: 'rgba(255,255,255,0.4)', fontSize: '0.85rem' }}>Loading profile...</p>
+      </div>
+    );
+  }
 
   return (
     <div className="profile-page app-shell">
@@ -214,7 +225,7 @@ export default function Profile({ showToast }) {
                      <div key={item.id} className="activity-item" style={{ borderBottom: '1px solid #222', padding: '16px 0' }}>
                         <p style={{ color: 'var(--orange)', fontSize: '0.8rem', fontWeight: 600, textTransform: 'uppercase' }}>Commented</p>
                         <p style={{ color: 'white', fontSize: '0.95rem' }}>"{item.content}"</p>
-                        <p style={{ color: 'var(--gray)', fontSize: '0.8rem' }}>On: {item.posts?.title}</p>
+                        {item.post_title && <p style={{ color: 'var(--gray)', fontSize: '0.8rem' }}>On: {item.post_title}</p>}
                      </div>
                    ))}
                 </div>

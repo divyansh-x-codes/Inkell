@@ -1,15 +1,16 @@
 import { useState, useMemo, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import SkeletonArticle from '../components/SkeletonArticle';
 import BottomNav from '../components/BottomNav';
-import { supabase } from '../supabaseClient';
 import { useAuth } from '../context/AuthContext';
+import { getAIFeed } from '../utils/firebaseData';
 
 const CATEGORIES = ['All', 'Technology', 'Design', 'Digital Media', 'Politics', 'Emerging Tech', 'Productivity'];
 
 const getInitials = (name) => {
   if (!name) return 'A';
   const s = name.trim().split(' ');
-  return s.length > 1 ? (s[0][0] + s[1][0]).toUpperCase() : name[0].toUpperCase();
+  return s.length > 1 ? (s[0][0] + (s[1][0] || '')).toUpperCase() : name[0].toUpperCase();
 };
 const authorColors = ['#cc4400', '#2b9348', '#1a6fa8', '#7046a0', '#c0392b'];
 const colorFor = (name) => authorColors[(name || 'A').charCodeAt(0) % authorColors.length];
@@ -25,16 +26,26 @@ export default function Search({ showToast }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    let cancelled = false;
     const fetchAll = async () => {
-      const { data } = await supabase
-        .from('posts')
-        .select('*, profiles(username, name, avatar_url)')
-        .order('created_at', { ascending: false });
-      setArticles(data || []);
-      setLoading(false);
+      setLoading(true);
+      try {
+        const data = await getAIFeed(user?.uid, 'foryou');
+
+        if (!cancelled) {
+          setArticles(data || []);
+          setLoading(false);
+        }
+      } catch (err) {
+        console.error('Search fetch failed:', err);
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
     };
     fetchAll();
-  }, []);
+    return () => { cancelled = true; };
+  }, [user?.uid]);
 
   const AUTHORS = useMemo(() => {
     const map = new Map();
@@ -115,7 +126,12 @@ export default function Search({ showToast }) {
         <div style={{ flex: 1, overflowY: 'auto', scrollbarWidth: 'none' }}>
           <div style={{ paddingBottom: 90 }}>
             {loading ? (
-              <div style={{ padding: '60px 24px', textAlign: 'center', color: '#555' }}>Searching...</div>
+              <div style={{ padding: '0 0px' }}>
+                <SkeletonArticle />
+                <SkeletonArticle />
+                <SkeletonArticle />
+                <SkeletonArticle />
+              </div>
             ) : (
               <>
                 {matchedAuthors.length > 0 && (
@@ -130,7 +146,7 @@ export default function Search({ showToast }) {
                           <div className="search-author-name">{a.name}</div>
                           <div className="search-author-meta">{a.count} article{a.count !== 1 ? 's' : ''}</div>
                         </div>
-                        {a.uid !== user?.id && (
+                        {a.uid !== user?.uid && (
                           <button className="search-dm-btn" onClick={(e) => handleDMAuthor(e, a)}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" style={{ width: 15, height: 15 }}><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg></button>
                         )}
                       </div>

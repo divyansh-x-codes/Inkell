@@ -5,11 +5,15 @@ import remarkGfm from 'remark-gfm';
 import rehypeRaw from 'rehype-raw';
 import BottomNav from '../components/BottomNav';
 import { useAuth } from '../context/AuthContext';
-import { supabase } from '../supabaseClient';
+import { db } from '../firebaseConfig';
+import { doc, deleteDoc, onSnapshot } from 'firebase/firestore';
 import {
+  getPost,
   toggleLike,
   subscribeToLikes,
-} from '../utils/supabaseData';
+  toggleSavePost,
+  isPostSaved
+} from '../utils/firebaseData';
 
 export default function Reader({ showToast }) {
   const { id } = useParams();
@@ -25,11 +29,13 @@ export default function Reader({ showToast }) {
 
   const handleDeleteBlog = async () => {
     if (window.confirm("Are you sure you want to delete this post?")) {
-      const { error } = await supabase.from('posts').delete().eq('id', id);
-      if (error) showToast("Failed to delete");
-      else {
+      try {
+        await deleteDoc(doc(db, 'posts', id));
         showToast("Post deleted");
         navigate('/home');
+      } catch (error) {
+        console.error("Delete error:", error);
+        showToast("Failed to delete");
       }
     }
   };
@@ -37,74 +43,56 @@ export default function Reader({ showToast }) {
   useEffect(() => {
     if (!id) return;
     
-    const fetchArticle = async () => {
-      const loadTimer = setTimeout(() => setLoading(true), 250);
-      try {
-        const { data, error } = await supabase
-          .from('posts')
-          .select('*, profiles!user_id(*)')
-          .eq('id', id)
-          .single();
-        
-        clearTimeout(loadTimer);
-        if (error) throw error;
-        if (data) {
-          setArticle(data);
-          setLikesCount(data.likes_count);
-        }
-      } catch (err) {
-        console.error("Story fetch error:", err);
-      } finally {
-        setLoading(false);
+    // 1. Initial Load
+    getPost(id).then(data => {
+      setArticle(data);
+      setLoading(false);
+    });
+
+    // 2. Subscribe to article updates (realtime Firestore)
+    const unsubArticle = onSnapshot(doc(db, 'posts', id), (docSnap) => {
+      if (docSnap.exists()) {
+        setArticle(prev => ({ ...prev, ...docSnap.data(), id: docSnap.id }));
       }
-    };
+    });
 
-    fetchArticle();
+    // 3. Subscribe to likes
+    const unsubLikes = subscribeToLikes(id, setLiked, setLikesCount, user?.uid);
 
-    // Subscribe to likes
-    const unsubLikes = subscribeToLikes(id, setLiked, setLikesCount);
-
-    // Subscribe to post updates (e.g. comment count)
-    const channel = supabase
-      .channel(`post_reader_${id}`)
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'posts', filter: `id=eq.${id}` }, (payload) => {
-        setArticle(prev => ({ ...prev, ...payload.new }));
-      })
-      .subscribe();
+    // 4. Check if saved
+    if (user?.uid) {
+      isPostSaved(id, user.uid).then(setSaved);
+    }
 
     return () => {
+      unsubArticle();
       unsubLikes();
-      supabase.removeChannel(channel);
     };
-  }, [id]);
+  }, [id, user?.uid]);
 
   const handleLike = async () => {
     if (!user) { showToast('Login to like'); navigate('/login'); return; }
-    await toggleLike(id, user.id);
+    await toggleLike(id, user.uid);
   };
 
   const handleSave = async () => {
-    showToast('Save coming soon!');
+    if (!user) { showToast('Login to save'); navigate('/login'); return; }
+    const res = await toggleSavePost(id, user.uid);
+    setSaved(res.saved);
+    showToast(res.saved ? 'Post saved' : 'Removed from saved');
   };
 
-  if (loading && !article) {
-    return (
-      <div style={{ background: 'var(--paper-bg)', height: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '20px', color: 'var(--text-ink-muted)', fontFamily: "'DM Sans', sans-serif" }}>
-        <div>Loading story...</div>
-      </div>
-    );
-  }
-
-  if (!article) {
+  if (!article && !loading) {
     return (
       <div style={{ background: 'var(--paper-bg)', height: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '24px', padding: '40px', textAlign: 'center' }}>
         <div style={{ color: 'var(--text-ink)', fontSize: '1.2rem', fontWeight: 600 }}>Story not found</div>
         <div style={{ color: '#666' }}>We couldn't retrieve this story. It might still be uploading or was deleted.</div>
-        <button className="btn-primary" onClick={() => window.location.reload()} style={{ width: 'auto', padding: '12px 32px' }}>Try Refreshing</button>
         <button onClick={() => navigate('/home')} style={{ color: 'var(--ink-accent)', fontWeight: 600, background: 'none', border: 'none' }}>Go back Home</button>
       </div>
     );
   }
+
+  if (loading) return null;
 
   const authorName = article.profiles?.name || article.profiles?.username || 'Anonymous';
   const authorAvatar = article.profiles?.avatar_url;
@@ -112,7 +100,7 @@ export default function Reader({ showToast }) {
   const getInitials = (name) => {
     if (!name) return 'A';
     const split = name.split(' ');
-    return split.length > 1 ? (split[0][0] + split[1][0]).toUpperCase() : name[0].toUpperCase();
+    return split.length > 1 ? (split[0][0] + (split[1][0] || '')).toUpperCase() : name[0].toUpperCase();
   };
 
   return (
@@ -125,7 +113,7 @@ export default function Reader({ showToast }) {
             </svg>
           </button>
           <div className="tb-right-actions" style={{ gap: 8 }}>
-            {user && article && user.id === article.user_id && (
+            {user && article && user.uid === article.user_id && (
               <button className="tb-circle-btn edit-btn" onClick={() => navigate(`/edit-article/${article.id}`)} style={{ color: 'var(--orange)' }}>
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ width: 18, height: 18 }}>
                   <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
@@ -150,7 +138,7 @@ export default function Reader({ showToast }) {
                   <div onClick={() => { navigator.clipboard.writeText(window.location.href); showToast('Link copied!'); setShowMenu(false); }} style={{ padding: '12px 20px', color: 'var(--text-ink)', fontWeight: 500, cursor: 'pointer' }}>
                     Copy Link
                   </div>
-                  {user && article && user.id === article.user_id && (
+                  {user && article && user.uid === article.user_id && (
                     <div onClick={() => { setShowMenu(false); handleDeleteBlog(); }} style={{ padding: '12px 20px', color: '#c0392b', fontWeight: 600, cursor: 'pointer', borderTop: '1px solid rgba(0,0,0,0.08)' }}>
                       Delete
                     </div>
@@ -217,4 +205,5 @@ export default function Reader({ showToast }) {
     </div>
   );
 }
+
 

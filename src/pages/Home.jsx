@@ -1,10 +1,13 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import SkeletonArticle from '../components/SkeletonArticle.jsx';
+
 import BottomNav from '../components/BottomNav';
 import ArticleCard from '../components/ArticleCard';
 import { useAuth } from '../context/AuthContext';
-import { getAIFeed } from '../utils/supabaseData';
-import { supabase } from '../supabaseClient';
+import { getAIFeed, subscribeToPosts } from '../utils/firebaseData';
+import { db } from '../firebaseConfig';
+import { collection, query, where, getDocs, onSnapshot } from 'firebase/firestore';
 
 const getInitials = (name) => {
   if (!name) return 'U';
@@ -19,28 +22,24 @@ function FollowingBar({ userId, navigate }) {
   const [followedUsers, setFollowedUsers] = useState([]);
 
   useEffect(() => {
-    if (!userId) return;
+    // Standardize to UID for database lookups
+    if (!userId) {
+      setFollowedUsers([]);
+      return;
+    }
     
-    const fetchFollowed = async () => {
-      const { data } = await supabase
-        .from('follows')
-        .select('following_id, profiles!following_id(*)')
-        .eq('follower_id', userId);
-      
-      if (data) {
-        setFollowedUsers(data.map(f => f.profiles));
-      }
-    };
+    const q = query(collection(db, 'follows'), where('follower_id', '==', userId));
+    
+    const unsubscribe = onSnapshot(q, async (snapshot) => {
+      const followed = await Promise.all(snapshot.docs.map(async (docSnap) => {
+        const followingId = docSnap.data().following_id;
+        const pSnap = await getDocs(query(collection(db, 'profiles'), where('id', '==', followingId)));
+        return pSnap.docs[0]?.data();
+      }));
+      setFollowedUsers(followed.filter(Boolean));
+    });
 
-    fetchFollowed();
-
-    // Subtle realtime: if someone follows/unfollows, refresh
-    const channel = supabase
-      .channel(`followed_users_${userId}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'follows', filter: `follower_id=eq.${userId}` }, fetchFollowed)
-      .subscribe();
-
-    return () => supabase.removeChannel(channel);
+    return () => unsubscribe();
   }, [userId]);
 
   const [brokenImages, setBrokenImages] = useState({});
@@ -83,72 +82,89 @@ export default function Home({ showToast }) {
   const { user } = useAuth();
   const [articles, setArticles] = useState(cachedArticles);
   const [loading, setLoading] = useState(cachedArticles.length === 0);
+  const [feedError, setFeedError] = useState(false);
   const [isVisible, setIsVisible] = useState(true);
   const [lastScrollY, setLastScrollY] = useState(0);
   const [feedType, setFeedType] = useState('foryou');
+  const [retryKey, setRetryKey] = useState(0);
 
   const displayName = user?.profiles?.name || user?.name || 'User';
   const displayAvatar = user?.profiles?.avatar_url || user?.avatar_url || null;
 
   useEffect(() => {
-    const loadFeed = async () => {
-      // Only show full-screen spinner on the VERY FIRST load (empty state)
-      // For every other case (re-mount, re-focus), keep existing articles visible
-      const isFirstLoad = articles.length === 0;
-      if (isFirstLoad) setLoading(true);
+    let cancelled = false;
 
-      const data = await getAIFeed(user?.id || 'anon', feedType);
-      cachedArticles = data; // Save to global cache
-      setArticles(data);
-      setLoading(false);
+    const loadFeed = async () => {
+      // Reliability: prioritize UID over ID
+      const currentUid = user?.uid || user?.id || 'anon';
+      const isFirstLoad = articles.length === 0;
+      
+      if (isFirstLoad) setLoading(true);
+      setFeedError(false);
+
+      try {
+        const data = await getAIFeed(currentUid, feedType);
+        
+        if (!cancelled && data) {
+          setArticles(prev => {
+            // Priority: anything already on screen (Real-time) + NEW batch data
+            const existingIds = new Set(prev.map(a => a.id));
+            const trulyNew = data.filter(d => !existingIds.has(d.id));
+            
+            // If we have real posts on screen, we don't want to show mocks at the top 
+            // unless the entire feed is empty.
+            let combined = [...prev, ...trulyNew];
+            
+            // --- GUARANTEED VISIBILITY: Merge with locally stored pending posts ---
+            try {
+              const pending = JSON.parse(localStorage.getItem('inktrix_pending_posts') || '[]');
+              if (pending.length > 0) {
+                const updatedIds = new Set(combined.map(c => c.id));
+                const uniquePending = pending.filter(p => !updatedIds.has(p.id));
+                combined = [...uniquePending, ...combined];
+              }
+            } catch (e) { console.error("Pending merge error:", e); }
+
+            cachedArticles = combined;
+            return combined;
+          });
+          setLoading(false);
+          setFeedError(false);
+        }
+      } catch (err) {
+        console.error('Feed load failed:', err);
+        if (!cancelled) {
+          if (cachedArticles.length > 0) {
+            setArticles(cachedArticles);
+          } else {
+            setFeedError(true);
+          }
+          setLoading(false);
+        }
+      }
     };
 
     loadFeed();
 
-    // Real-time: instantly prepend new posts WITHOUT re-fetching the whole feed
-    const channel = supabase
-      .channel('home-feed-realtime')
-      .on(
-        'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'posts' },
-        async (payload) => {
-          if (!payload.new?.id) return;
-          // Fetch full post with profile data then prepend to top
-          const { data: newPost } = await supabase
-            .from('posts')
-            .select('*, profiles(username, name, avatar_url)')
-            .eq('id', payload.new.id)
-            .single();
-          if (newPost) {
-            setArticles(prev => {
-              if (prev.find(a => a.id === newPost.id)) return prev;
-              const newFeed = [newPost, ...prev];
-              cachedArticles = newFeed; // Update cache
-              return newFeed;
-            });
-          }
-        }
-      )
-      .subscribe();
-    // Listen to local post creation (fixes optimistic rendering for large posts that might drop in realtime)
-    const handleLocalPost = (e) => {
-      const newPost = e.detail;
-      if (newPost) {
+    const unsubscribePosts = subscribeToPosts((newPosts) => {
+      if (!cancelled && newPosts && newPosts.length > 0) {
         setArticles(prev => {
-          if (prev.find(a => a.id === newPost.id)) return prev;
-          const newFeed = [newPost, ...prev];
-          cachedArticles = newFeed; // Update cache
-          return newFeed;
+          const seenIds = new Set(prev.map(a => a.id));
+          const filteredNew = newPosts.filter(p => !seenIds.has(p.id));
+          if (filteredNew.length === 0) return prev;
+          
+          const combined = [...filteredNew, ...prev];
+          cachedArticles = combined;
+          return combined;
         });
       }
-    };
-    window.addEventListener('local_post_created', handleLocalPost);
+    });
 
     return () => {
-      supabase.removeChannel(channel);
-      window.removeEventListener('local_post_created', handleLocalPost);
+      cancelled = true;
+      unsubscribePosts();
     };
-  }, [user?.id, feedType]);
+  }, [user?.uid, user?.id, feedType, retryKey]);
 
   // Scroll logic for Topbar visibility
   useEffect(() => {
@@ -186,15 +202,59 @@ export default function Home({ showToast }) {
         </div>
 
         <div className="feed" id="main-feed" style={{ paddingTop: '20px', paddingBottom: '100px' }}>
-          <FollowingBar userId={user?.id} navigate={navigate} />
+          <FollowingBar userId={user?.uid || user?.id} navigate={navigate} />
+
 
           <div className="article-list-container">
             {loading ? (
-              <div className="feed-status">Loading personalized feed...</div>
+
+              <>
+                <SkeletonArticle />
+                <SkeletonArticle />
+                <SkeletonArticle />
+              </>
+            ) : feedError ? (
+              <div className="feed-status empty">
+                <h3>Couldn't load feed</h3>
+                <p>Please check your connection and try again.</p>
+                <button
+                  onClick={() => { setRetryKey(k => k + 1); }}
+                  style={{
+                    marginTop: 16,
+                    padding: '10px 28px',
+                    borderRadius: 24,
+                    border: 'none',
+                    background: 'linear-gradient(135deg, #ff6b35, #f7c948)',
+                    color: '#fff',
+                    fontWeight: 700,
+                    fontSize: '0.95rem',
+                    cursor: 'pointer',
+                  }}
+                >
+                  Retry
+                </button>
+              </div>
             ) : articles.length === 0 ? (
               <div className="feed-status empty">
                 <h3>No articles yet</h3>
-                <p>Start exploring to find your favorite writers.</p>
+                <p>Start exploring or share your first story!</p>
+                <button 
+                  onClick={() => navigate('/add-article')}
+                  style={{
+                    marginTop: 20,
+                    padding: '12px 32px',
+                    borderRadius: 24,
+                    border: 'none',
+                    background: 'var(--orange)',
+                    color: '#fff',
+                    fontWeight: 700,
+                    fontSize: '1rem',
+                    cursor: 'pointer',
+                    boxShadow: '0 4px 15px rgba(232, 93, 4, 0.3)'
+                  }}
+                >
+                  Create First Post
+                </button>
               </div>
             ) : (
               articles.map((article) => (

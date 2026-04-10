@@ -1,5 +1,25 @@
 import { createContext, useContext, useState, useEffect } from 'react';
-import { supabase } from '../supabaseClient';
+import { auth, db } from '../firebaseConfig';
+import { 
+  onAuthStateChanged, 
+  signInWithEmailAndPassword, 
+  createUserWithEmailAndPassword, 
+  signOut as firebaseSignOut,
+  updateProfile as firebaseUpdateProfile,
+  signInAnonymously,
+  GoogleAuthProvider,
+  signInWithPopup,
+  getRedirectResult
+} from 'firebase/auth';
+import { 
+  doc, 
+  getDoc, 
+  setDoc, 
+  onSnapshot, 
+  collection, 
+  query, 
+  where 
+} from 'firebase/firestore';
 import { Capacitor } from '@capacitor/core';
 
 const AuthContext = createContext();
@@ -11,164 +31,162 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
   const [unreadCount, setUnreadCount] = useState(0);
 
-  useEffect(() => {
-    // 1. Safety Timeout: Force-load the app if Supabase is hanging (e.g. poor connection)
-    const safetyTimer = setTimeout(() => {
-      console.warn("Auth initialisation timed out. Force loading...");
-      setLoading(false);
-    }, 5000);
+  // Fetch and sync user with Firestore profile
+  const fetchAndSetUser = async (fbUser) => {
+    const profileRef = doc(db, 'profiles', fbUser.uid);
+    try {
+      const profileSnap = await getDoc(profileRef);
+      
+      // EXPLICIT MAPPING: Ensure uid and id are always present
+      // Firebase User objects can have non-enumerable properties that get lost in spread
+      let userData = { 
+        uid: fbUser.uid, 
+        id: fbUser.uid,
+        email: fbUser.email,
+        displayName: fbUser.displayName,
+        photoURL: fbUser.photoURL,
+        isAnonymous: fbUser.isAnonymous,
+        emailVerified: fbUser.emailVerified
+      };
 
-    // 2. Initial Session Check
-    const checkSession = async () => {
-      try {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (session?.user) {
-          await fetchAndSetUser(session.user);
-        }
-      } catch (err) {
-        console.error("Session check failed:", err);
-      } finally {
-        setLoading(false);
-        clearTimeout(safetyTimer);
+      if (profileSnap.exists()) {
+        userData.profiles = profileSnap.data();
+      } else {
+        // PROFILE MISSING: Create a basic profile automatically
+        const emailPrefix = fbUser.email ? fbUser.email.split('@')[0] : `user_${fbUser.uid.substring(0, 5)}`;
+        const newProfile = {
+          id: fbUser.uid,
+          username: emailPrefix,
+          name: fbUser.displayName || emailPrefix,
+          avatar_url: fbUser.photoURL || null,
+          bio: 'Sharing stories on Inktrix.',
+          created_at: new Date().toISOString()
+        };
+        await setDoc(profileRef, newProfile);
+        userData.profiles = newProfile;
       }
-    };
 
-    checkSession();
+      setUser(userData);
+    } catch (err) {
+      console.error("Profile sync failed:", err);
+      setUser(fbUser); // Fallback to basic user
+    } finally {
+      setLoading(false); // Atomic unlock after everything is ready
+    }
+  };
 
-    // 3. Auth State Listener
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (session?.user) {
-        await fetchAndSetUser(session.user);
+  useEffect(() => {
+    let isMounted = true;
+
+    // 1. Initial State Sync
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      if (!isMounted) return;
+      console.log('Firebase Auth signal detected:', !!firebaseUser);
+      
+      if (firebaseUser) {
+        await fetchAndSetUser(firebaseUser);
       } else {
         setUser(null);
         setLoading(false);
       }
-      clearTimeout(safetyTimer);
     });
 
+    // 2. Handle Redirect Results (Crucial for Social Login)
+    getRedirectResult(auth).then(async (result) => {
+      if (!isMounted || !result?.user) return;
+      await fetchAndSetUser(result.user);
+      window.location.href = "/home"; // Hard redirect for reliability
+    }).catch(console.error);
+
     return () => {
-      clearTimeout(safetyTimer);
-      subscription.unsubscribe();
+      isMounted = false;
+      unsubscribe();
     };
   }, []);
 
-  const fetchAndSetUser = async (sbUser) => {
-    // Optimistic UI: Unlock the loading screen INSTANTLY so user can enter the app
-    setUser(sbUser);
-    setLoading(false);
-
-    try {
-      const { data: profile, error } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', sbUser.id)
-        .single();
-
-      if (error && error.code !== 'PGRST116') {
-        console.error("Error fetching profile:", error);
-      }
-
-      if (profile) {
-        // Silently enrich the user object with their profile in the background
-        setUser(prev => prev ? { ...prev, profiles: profile } : { ...sbUser, profiles: profile });
-      } else {
-        setUser(prev => prev ? { ...prev, profiles: null } : { ...sbUser, profiles: null });
-      }
-    } catch (err) {
-      console.error("Profile fetch failed:", err);
-    }
-  };
-
-  // ── Global real-time unread counter ────────────────────────────────
+  // ── Global real-time unread counter (Notifications) ────────────────
   useEffect(() => {
-    if (!user?.id) {
+    if (!user?.uid) {
       setUnreadCount(0);
       return;
     }
 
-    // Subscribe to new messages for this user
-    // In Supabase, we'd check notifications or messages in circles the user is in
-    const messageChannel = supabase
-      .channel('unread-count')
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'notifications',
-          filter: `user_id=eq.${user.id}`,
-        },
-        () => {
-          // Increment or refetch count
-          fetchUnreadCount();
-        }
-      )
-      .subscribe();
+    const q = query(
+      collection(db, 'notifications'), 
+      where('user_id', '==', user.uid),
+      where('is_read', '==', false)
+    );
 
-    const fetchUnreadCount = async () => {
-      const { count } = await supabase
-        .from('notifications')
-        .select('*', { count: 'exact', head: true })
-        .eq('user_id', user.id)
-        .eq('is_read', false);
-      setUnreadCount(count || 0);
-    };
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      setUnreadCount(snapshot.size);
+    });
 
-    fetchUnreadCount();
-
-    return () => {
-      supabase.removeChannel(messageChannel);
-    };
-  }, [user?.id]);
+    return () => unsubscribe();
+  }, [user?.uid]);
 
   // Email/Password Auth
   const signUp = async (name, email, password) => {
     try {
-      const { data, error } = await supabase.auth.signUp({
-        email,
-        password,
-        options: {
-          data: {
-            name: name,
-          }
-        }
-      });
-      // Force manual session update to guarantee instant navigation bypassing the listener
-      if (data?.user && !error) fetchAndSetUser(data.user);
-      return { user: data?.user, error };
+      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+      const fbUser = userCredential.user;
+      
+      // Add displayName to Firebase Auth user
+      await firebaseUpdateProfile(fbUser, { displayName: name });
+      
+      // Manually trigger profile creation
+      await fetchAndSetUser(fbUser);
+      
+      return { user: fbUser, error: null };
     } catch (error) {
+      console.error("SignUp Error:", error);
       return { user: null, error };
     }
   };
 
   const logIn = async (email, password) => {
     try {
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
-      // Force manual session update to guarantee instant navigation bypassing the listener
-      if (data?.user && !error) fetchAndSetUser(data.user);
-      return { user: data?.user, error };
+      const userCredential = await signInWithEmailAndPassword(auth, email, password);
+      const fbUser = userCredential.user;
+      await fetchAndSetUser(fbUser);
+      return { user: fbUser, error: null };
     } catch (error) {
+      console.error("Login Error:", error);
       return { user: null, error };
     }
   };
 
-  // Google Sign In
+  // Google Sign In (Web only for now)
   const loginWithGoogle = async () => {
     try {
-      const { data, error } = await supabase.auth.signInWithOAuth({
-        provider: 'google',
-        options: {
-          redirectTo: Capacitor.isNativePlatform() 
-            ? 'com.inktrix.app://login' 
-            : window.location.origin
-        }
-      });
-      return { data, error };
+      setLoading(true);
+      const provider = new GoogleAuthProvider();
+      const result = await signInWithPopup(auth, provider);
+      await fetchAndSetUser(result.user);
+      return { user: result.user, error: null };
     } catch (error) {
-      console.error("Google Login Error:", error);
+      console.error("Google login error:", error);
+      setLoading(false);
+      return { user: null, error };
+    }
+  };
+
+  // Demo Mode Bypass (Now using real Firebase Anonymous Auth)
+  const loginAsDemoUser = async () => {
+    try {
+      setLoading(true);
+      const userCredential = await signInAnonymously(auth);
+      const fbUser = userCredential.user;
+      
+      // Auto-set some friendly demo names if not already set
+      if (!fbUser.displayName) {
+        await firebaseUpdateProfile(fbUser, { displayName: 'Demo User' });
+      }
+      
+      await fetchAndSetUser(fbUser);
+      return { user: fbUser, error: null };
+    } catch (error) {
+      console.error("Demo Login Error:", error);
+      setLoading(false);
       return { user: null, error };
     }
   };
@@ -176,7 +194,7 @@ export const AuthProvider = ({ children }) => {
   // Sign out
   const signOut = async () => {
     try {
-      await supabase.auth.signOut();
+      await firebaseSignOut(auth);
       setUser(null);
     } catch (error) {
       console.error("Sign out error", error);
@@ -184,16 +202,16 @@ export const AuthProvider = ({ children }) => {
   };
 
   const refreshUser = async () => {
-    const { data: { session } } = await supabase.auth.getSession();
-    if (session?.user) {
-      await fetchAndSetUser(session.user);
+    if (auth.currentUser) {
+      await fetchAndSetUser(auth.currentUser);
     }
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, unreadCount, signUp, logIn, loginWithGoogle, signOut, refreshUser }}>
+    <AuthContext.Provider value={{ user, loading, unreadCount, signUp, logIn, loginAsDemoUser, loginWithGoogle, signOut, refreshUser }}>
       {children}
     </AuthContext.Provider>
   );
-};
+}
+
 

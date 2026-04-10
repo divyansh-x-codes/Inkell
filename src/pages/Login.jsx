@@ -4,7 +4,7 @@ import { useAuth } from '../context/AuthContext';
 
 export default function Login({ showToast }) {
   const navigate = useNavigate();
-  const { logIn, loginWithGoogle } = useAuth();
+  const { logIn, loginWithGoogle, loginAsDemoUser } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -18,7 +18,21 @@ export default function Login({ showToast }) {
     const { error } = await logIn(email, password);
     if (error) {
       setLoading(false);
-      showToast(error.message || 'Login failed. Check your credentials.');
+      let msg = 'Incorrect email or password. Please try again or sign up.';
+      
+      if (error.code === 'auth/api-key-not-valid' || error.message?.includes('api-key-not-valid')) {
+        msg = "Configuration Error: Invalid Firebase API Key.";
+      } else if (error.code === 'auth/too-many-requests') {
+        msg = "Access temporarily disabled due to many failed attempts. Try again later.";
+      } else if (error.code === 'auth/user-not-found') {
+        msg = "No account found with this email. Please sign up.";
+      } else if (error.code === 'auth/wrong-password') {
+        msg = "Incorrect password. Please try again.";
+      }
+      
+      showToast(msg);
+    } else {
+      window.location.href = '/home'; // Hard redirect for reliability
     }
     // On success: DON'T navigate manually.
     // AuthContext's onAuthStateChange will set user → ProtectedRoute auto-redirects to /home.
@@ -31,6 +45,8 @@ export default function Login({ showToast }) {
     if (error) {
       setLoading(false);
       showToast(error.message || 'Google login failed');
+    } else {
+      window.location.href = '/home'; // Hard redirect
     }
     // On success: Google OAuth redirects externally; the auth listener handles the rest.
   };
@@ -87,6 +103,29 @@ export default function Login({ showToast }) {
       >
         {loading ? 'Logging in...' : 'Continue'}
       </button>
+
+      <div style={{ textAlign: 'center', marginTop: '24px' }}>
+        <p style={{ fontSize: '0.85rem', color: 'rgba(255,255,255,0.4)', marginBottom: '8px' }}>Development Blockers?</p>
+        <button 
+          onClick={async () => {
+             const { error } = await loginAsDemoUser();
+             if (!error) window.location.href = '/home';
+             else showToast(error.message || 'Demo login failed');
+          }}
+          style={{ 
+            background: 'transparent', 
+            border: '1px solid rgba(255,255,255,0.1)', 
+            color: 'var(--orange)', 
+            padding: '8px 16px', 
+            borderRadius: '20px', 
+            fontSize: '0.85rem',
+            fontWeight: 600,
+            cursor: 'pointer'
+          }}
+        >
+          Enter Demo Mode →
+        </button>
+      </div>
 
       <p className="switch-auth">Don't have an account? <span onClick={() => navigate('/signup')}>Sign up</span></p>
     </div>

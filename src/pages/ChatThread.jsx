@@ -1,8 +1,9 @@
 import { useState, useRef, useEffect } from 'react';
 import { useNavigate, useLocation, useParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { supabase } from '../supabaseClient';
-import { subscribeToMessages, sendMessage } from '../utils/supabaseData';
+import { db } from '../firebaseConfig';
+import { doc, getDoc } from 'firebase/firestore';
+import { subscribeToMessages, sendMessage, getUserProfile } from '../utils/firebaseData';
 
 export default function ChatThread({ showToast }) {
   const navigate = useNavigate();
@@ -23,35 +24,40 @@ export default function ChatThread({ showToast }) {
   const [brokenImages, setBrokenImages] = useState({});
 
   useEffect(() => {
-    if (!recipient && id && user) {
+    if (!recipient && id && user?.uid) {
       const fetchRecipient = async () => {
-        const { data: participants } = await supabase
-          .from('conversation_participants')
-          .select('user_id, profiles(*)')
-          .eq('conversation_id', id)
-          .neq('user_id', user.id);
-        
-        const prof = participants?.[0]?.profiles;
-        if (prof) {
-          setRecipient({
-            id: prof.id,
-            name: prof.name || prof.username,
-            avatar: prof.avatar_url
-          });
+        try {
+          const convSnap = await getDoc(doc(db, 'conversations', id));
+          if (convSnap.exists()) {
+            const data = convSnap.data();
+            const otherId = data.participants.find(p => p !== user.uid);
+            if (otherId) {
+              const prof = await getUserProfile(otherId);
+              if (prof) {
+                setRecipient({
+                  id: otherId,
+                  name: prof.name || prof.username,
+                  avatar: prof.avatar_url
+                });
+              }
+            }
+          }
+        } catch (e) {
+          console.error("fetchRecipient error:", e);
         }
       };
       fetchRecipient();
     }
-  }, [id, user?.id, recipient]);
+  }, [id, user?.uid, recipient]);
 
   useEffect(() => {
-    if (!id || !user?.id) return;
+    if (!id || !user?.uid) return;
     const unsubscribe = subscribeToMessages(id, (data) => {
       setMessages(data);
       setLoading(false);
     });
     return () => unsubscribe();
-  }, [id, user?.id]);
+  }, [id, user?.uid]);
 
   useEffect(() => {
     if (messages.length > 0) {
@@ -63,14 +69,14 @@ export default function ChatThread({ showToast }) {
     const text = input.trim();
     if (!text || !user || !recipient) return;
     setInput('');
-    const result = await sendMessage(id, user.id, text);
+    const result = await sendMessage(id, user.uid, text);
     if (result.error) showToast('Failed to send message');
   };
 
   const getInitials = (name) => {
     if (!name) return 'U';
     const s = name.trim().split(' ');
-    return s.length > 1 ? (s[0][0] + (s[1][0] || '')).toUpperCase() : name[0].toUpperCase();
+    return s.length > 1 ? (s[0][0] + (s[1][0] || '')[0]).toUpperCase() : name[0].toUpperCase();
   };
 
   const handleImageError = (key) => setBrokenImages(prev => ({ ...prev, [key]: true }));
@@ -118,7 +124,7 @@ export default function ChatThread({ showToast }) {
             </div>
           )}
           {messages.map((msg, idx) => {
-            const isMine = msg.sender_id === user.id;
+            const isMine = msg.sender_id === user.uid;
             const bubbleKey = `bubble-${msg.id || idx}`;
             return (
               <div key={msg.id || idx} className={`chat-bubble-row ${isMine ? 'mine' : 'theirs'}`}>

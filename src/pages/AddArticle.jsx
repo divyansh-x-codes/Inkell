@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { createPost, updatePost, getPost } from '../utils/supabaseData';
+import { createPost, updatePost, getPost } from '../utils/firebaseData';
 
 const CATEGORIES = ['Technology', 'Design', 'Culture', 'Digital Media', 'Politics', 'Emerging Tech', 'Productivity', 'Science', 'Health', 'Business'];
 
@@ -62,30 +62,50 @@ export default function AddArticle({ showToast }) {
       category,
     };
 
-    // OPTIMISTIC NAVIGATION: Don't await the result to navigate
-    const actionPromise = isEdit ? updatePost(id, postData) : createPost(postData, user.id);
-    
-    actionPromise.then(result => {
-      if (result.error) {
-        showToast('Error: ' + result.error.message);
-      } else {
-        // Post-publish success: Dispatch event so Home can locally inject the new post
-        if (!isEdit && result.data) {
-          window.dispatchEvent(new CustomEvent('local_post_created', { detail: result.data }));
-        }
-        console.log("Post success:", result);
-      }
-    }).catch(err => {
-      showToast('Connection error. Post might not have saved.');
-    }).finally(() => {
-      setPublishing(false);
-    });
+    // --- GUARANTEED VISIBILITY FIX ---
+    const optimisticPost = {
+      id: 'pending-' + Date.now(),
+      title: title.trim(),
+      tagline: tagline.trim(),
+      content: body.trim(),
+      image_url: coverImage.trim() || null,
+      category: category,
+      created_at: new Date().toISOString(),
+      user_id: user.uid,
+      profiles: user.profiles || { name: user.email || 'Author' },
+      likes_count: 0,
+      comments_count: 0,
+      is_pending: true
+    };
 
-    // Immediate UI feedback with a slightly longer delay for background sync safety
+    // 1. Save to local storage so it survives navigation/refresh
+    try {
+      const pending = JSON.parse(localStorage.getItem('inktrix_pending_posts') || '[]');
+      localStorage.setItem('inktrix_pending_posts', JSON.stringify([optimisticPost, ...pending]));
+    } catch (e) { console.error("LS Error:", e); }
+
+    // 2. Dispatch for immediate UI update
+    window.dispatchEvent(new CustomEvent('local_post_created', { detail: optimisticPost }));
+
+    showToast(isEdit ? '✅ Saving...' : '🎉 Published!');
+    
+    // 3. Background Sync
+    (async () => {
+      try {
+        const result = await (isEdit ? updatePost(id, postData) : createPost(postData, user.uid));
+        if (!result.error) {
+          // Remove from pending on success
+          const currentPending = JSON.parse(localStorage.getItem('inktrix_pending_posts') || '[]');
+          localStorage.setItem('inktrix_pending_posts', JSON.stringify(currentPending.filter(p => p.title !== optimisticPost.title)));
+        }
+      } catch (e) {
+        console.error("BG Sync fail:", e);
+      }
+    })();
+
     setTimeout(() => {
-      showToast(isEdit ? '✅ Saved!' : '🎉 Published!');
       navigate(isEdit ? `/article/${id}` : '/home', { replace: true });
-    }, 300);
+    }, 200);
   };
 
   // Handle real-time WYSIWYG input
@@ -101,7 +121,7 @@ export default function AddArticle({ showToast }) {
       case 'bold': document.execCommand('bold', false, null); break;
       case 'point': document.execCommand('insertUnorderedList', false, null); break;
       case 'color': document.execCommand('foreColor', false, value); break;
-      case 'align': 
+      case 'align':
         if (value === 'center') document.execCommand('justifyCenter', false, null);
         else document.execCommand('justifyLeft', false, null);
         break;
@@ -253,7 +273,7 @@ export default function AddArticle({ showToast }) {
 
         <div style={{ marginTop: 16, padding: '12px 16px', background: '#111', borderRadius: 10, display: 'flex', alignItems: 'center', gap: 12 }}>
           <div style={{ width: 36, height: 36, borderRadius: '50%', background: '#cc4400', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, color: 'white', fontSize: '0.85rem', flexShrink: 0 }}>
-             {user?.profiles?.name ? user.profiles.name[0] : (user?.email ? user.email[0].toUpperCase() : 'A')}
+            {user?.profiles?.name ? user.profiles.name[0] : (user?.email ? user.email[0].toUpperCase() : 'A')}
           </div>
           <div>
             <div style={{ color: 'white', fontWeight: 600, fontSize: '0.9rem' }}>

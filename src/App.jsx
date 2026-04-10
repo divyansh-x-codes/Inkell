@@ -28,11 +28,13 @@ const ScrollToTop = () => {
   return null;
 };
 
+import PremiumLoader from "./components/PremiumLoader";
+
 const LoadingScreen = () => {
   const [showHint, setShowHint] = useState(false);
 
   useEffect(() => {
-    const t = setTimeout(() => setShowHint(true), 5000);
+    const t = setTimeout(() => setShowHint(true), 3000);
     return () => clearTimeout(t);
   }, []);
 
@@ -43,43 +45,70 @@ const LoadingScreen = () => {
       flexDirection: 'column',
       alignItems: 'center',
       justifyContent: 'center',
-      background: 'var(--bg)', // Use app theme color instead of literal black
+      background: '#000000', 
       color: '#ffffff',
       fontFamily: 'Inter, sans-serif',
-      position: 'relative',
+      position: 'fixed',
+      inset: 0,
       zIndex: 9999
     }}>
-      <div className="premium-loader">
-        <div className="logo-mark" style={{ width: 60, height: 60, marginBottom: 20 }}></div>
+      <div style={{ marginBottom: 32 }}>
+        <PremiumLoader size={64} color="var(--orange)" thickness={4} />
       </div>
+      
       <div style={{ 
-        fontSize: '1.2rem', 
-        fontWeight: 600, 
-        letterSpacing: '0.1rem',
-        marginBottom: 8,
-        background: 'linear-gradient(90deg, #fff, #888, #fff)',
+        fontSize: '1.4rem', 
+        fontWeight: 800, 
+        letterSpacing: '0.15rem',
+        marginBottom: 12,
+        textTransform: 'uppercase',
+        background: 'linear-gradient(90deg, #fff 0%, #444 50%, #fff 100%)',
         WebkitBackgroundClip: 'text',
         WebkitTextFillColor: 'transparent',
         backgroundSize: '200% 100%',
-        animation: 'shimmer 2s infinite linear'
+        animation: 'shimmer 3s infinite ease-in-out'
       }}>Inktrix</div>
-      <div style={{ fontSize: '0.8rem', opacity: 0.4, fontWeight: 400 }}>
+      
+      <div style={{ 
+        fontSize: '0.85rem', 
+        opacity: 0.5, 
+        fontWeight: 500,
+        letterSpacing: '0.02em',
+        transition: 'opacity 0.5s ease'
+      }}>
         {showHint ? 'Taking longer than usual... Check your connection' : 'Connecting to your feed...'}
       </div>
+
+      <style dangerouslySetInnerHTML={{ __html: `
+        @keyframes shimmer {
+          0% { background-position: -200% 0; }
+          100% { background-position: 200% 0; }
+        }
+      `}} />
     </div>
   );
 };
 
 const ProtectedRoute = ({ children }) => {
   const { user, loading } = useAuth();
+  
   if (loading) return <LoadingScreen />;
-  return user ? children : <Navigate to="/" replace />;
+  
+  // Strict check: No user means redirect to home (Welcome)
+  if (!user) return <Navigate to="/" replace />;
+  
+  return children;
 };
 
 const PublicRoute = ({ children }) => {
   const { user, loading } = useAuth();
+  
   if (loading) return <LoadingScreen />;
-  return !user ? children : <Navigate to="/home" replace />;
+  
+  // If already logged in, skip Login/Signup/Welcome
+  if (user) return <Navigate to="/home" replace />;
+  
+  return children;
 };
 
 function App() {

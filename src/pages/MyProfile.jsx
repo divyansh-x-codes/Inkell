@@ -2,15 +2,16 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import BottomNav from '../components/BottomNav';
 import ArticleCard from '../components/ArticleCard';
+import PremiumLoader from '../components/PremiumLoader';
 import { useAuth } from '../context/AuthContext';
 import { 
-  getPostsByAuthor, 
   getLikedPosts, 
   getUserActivity, 
-  getFollowStats 
-} from '../utils/supabaseData';
+  getFollowStats,
+  subscribeToFollowStats
+} from '../utils/firebaseData';
 
-const TABS = ['Activity', 'Posts', 'Likes'];
+const TABS = ['Activity', 'Posts', 'Likes', 'Following'];
 
 export default function MyProfile({ showToast }) {
   const navigate = useNavigate();
@@ -20,46 +21,62 @@ export default function MyProfile({ showToast }) {
   const [posts, setPosts] = useState([]);
   const [activity, setActivity] = useState([]);
   const [likedPosts, setLikedPosts] = useState([]);
+  const [following, setFollowing] = useState([]);
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState({ followers: 0, following: 0 });
 
   useEffect(() => {
-    if (!user?.id) return;
-    const loadStats = async () => {
-      const s = await getFollowStats(user.id);
-      setStats(s);
+    if (!user?.uid) return;
+
+    // Real-time Follow Stats (Subscribers/Following)
+    const unsubscribeStats = subscribeToFollowStats(user.uid, (newStats) => {
+      setStats(newStats);
       setLoading(false);
-    };
-    loadStats();
-  }, [user?.id]);
+    });
+
+    return () => unsubscribeStats();
+  }, [user?.uid]);
 
   useEffect(() => {
-    if (!user?.id) return;
+    if (!user?.uid) return;
     const loadTabData = async () => {
       if (activeTab === 'Posts') {
-        const data = await getPostsByAuthor(user.id);
+        const data = await getPostsByAuthor(user.uid);
         setPosts(data);
       } else if (activeTab === 'Activity') {
-        const data = await getUserActivity(user.id);
+        const data = await getUserActivity(user.uid);
         setActivity(data);
       } else if (activeTab === 'Likes') {
-        const data = await getLikedPosts(user.id);
+        const data = await getLikedPosts(user.uid);
         setLikedPosts(data);
+      } else if (activeTab === 'Following') {
+        const { getFollowingList } = await import('../utils/firebaseData');
+        const data = await getFollowingList(user.uid);
+        setFollowing(data);
       }
     };
     loadTabData();
-  }, [user?.id, activeTab]);
+  }, [user?.uid, activeTab]);
 
   const getInitials = (n) => {
     if (!n) return 'Y';
     const s = n.trim().split(' ');
-    return s.length > 1 ? (s[0][0] + s[1][0]).toUpperCase() : n[0].toUpperCase();
+    return s.length > 1 ? (s[0][0] + (s[1][0] || '')).toUpperCase() : n[0].toUpperCase();
   };
 
   if (!user) {
     return (
       <div className="profile-page app-shell" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#666' }}>
         <button className="btn-primary" onClick={() => navigate('/login')}>Login to view profile</button>
+      </div>
+    );
+  }
+
+  if (loading) {
+    return (
+      <div className="app-shell" style={{ display:'flex', flexDirection: 'column', alignItems:'center', justifyContent:'center', height:'100vh', background:'#000' }}>
+        <PremiumLoader size={48} color="var(--orange)" thickness={3} />
+        <p style={{ marginTop: 16, color: 'rgba(255,255,255,0.4)', fontSize: '0.85rem' }}>Loading your profile...</p>
       </div>
     );
   }
@@ -177,7 +194,61 @@ export default function MyProfile({ showToast }) {
                   You haven't published any posts yet.
                 </div>
               : <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                  {posts.map(a => <ArticleCard key={a.id} article={a} showToast={showToast} isDashboard />)}
+                  {posts.map(a => <ArticleCard key={a.id} article={a} showToast={showToast} isDashboard />) }
+                </div>
+          )}
+
+          {activeTab === 'Following' && (
+            following.length === 0
+              ? <div style={{ textAlign: 'center', color: '#666', padding: '40px 20px', fontSize: '0.95rem' }}>
+                  You are not following anyone yet. Explore articles to find creators you love!
+                </div>
+              : <div style={{ padding: '0 16px' }}>
+                  {following.map(u => (
+                    <div 
+                      key={u.id} 
+                      className="following-list-item"
+                      style={{ 
+                        display: 'flex', 
+                        alignItems: 'center', 
+                        justifyContent: 'space-between',
+                        padding: '16px 0',
+                        borderBottom: '1px solid rgba(255,255,255,0.05)'
+                      }}
+                    >
+                      <div 
+                        style={{ display: 'flex', alignItems: 'center', gap: '12px', cursor: 'pointer' }}
+                        onClick={() => navigate(`/profile/${encodeURIComponent(u.username || u.name)}`, { state: { authorId: u.id } })}
+                      >
+                        <div className="sc-avatar" style={{ width: 44, height: 44 }}>
+                          {u.avatar_url ? (
+                            <img src={u.avatar_url} alt="av" />
+                          ) : (
+                            <div className="sc-initials" style={{ background: u.is_placeholder ? '#555' : '#cc4400', width: '100%', height: '100%', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                              {getInitials(u.name || u.username)}
+                            </div>
+                          )}
+                        </div>
+                        <div>
+                          <div style={{ fontWeight: 700, color: 'white', fontSize: '0.95rem' }}>{u.is_placeholder && u.username === 'editorial-team' ? 'Inktrix Editorial' : (u.name || u.username)}</div>
+                          <div style={{ fontSize: '0.8rem', color: 'var(--gray)' }}>@{u.username || 'user'}</div>
+                        </div>
+                      </div>
+                      <button 
+                        className="btn-secondary" 
+                        style={{ width: 'auto', padding: '8px 16px', fontSize: '0.8rem', borderRadius: '20px' }}
+                        onClick={async () => {
+                          const { unfollowUser } = await import('../utils/firebaseData');
+                          await unfollowUser(user.uid, u.id);
+                          setFollowing(prev => prev.filter(item => item.id !== u.id));
+                          setStats(prev => ({ ...prev, following: Math.max(0, prev.following - 1) }));
+                          showToast(`Unfollowed ${u.name}`);
+                        }}
+                      >
+                        Following
+                      </button>
+                    </div>
+                  ))}
                 </div>
           )}
         </div>
