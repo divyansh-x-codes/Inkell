@@ -84,8 +84,11 @@ export const AuthProvider = ({ children }) => {
       console.log('Firebase Auth signal detected:', !!firebaseUser);
       
       if (firebaseUser) {
+        console.log('User signed in, locking UI for profile sync...');
+        setLoading(true);
         await fetchAndSetUser(firebaseUser);
       } else {
+        console.log('No user detected, unlocking UI...');
         setUser(null);
         setLoading(false);
       }
@@ -127,30 +130,34 @@ export const AuthProvider = ({ children }) => {
   // Email/Password Auth
   const signUp = async (name, email, password) => {
     try {
+      setLoading(true);
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
       const fbUser = userCredential.user;
       
       // Add displayName to Firebase Auth user
       await firebaseUpdateProfile(fbUser, { displayName: name });
       
-      // Manually trigger profile creation
+      // Manually trigger profile creation and wait for it
       await fetchAndSetUser(fbUser);
       
       return { user: fbUser, error: null };
     } catch (error) {
       console.error("SignUp Error:", error);
+      setLoading(false);
       return { user: null, error };
     }
   };
 
   const logIn = async (email, password) => {
     try {
+      setLoading(true);
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
       const fbUser = userCredential.user;
       await fetchAndSetUser(fbUser);
       return { user: fbUser, error: null };
     } catch (error) {
       console.error("Login Error:", error);
+      setLoading(false);
       return { user: null, error };
     }
   };

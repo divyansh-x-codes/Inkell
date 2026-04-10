@@ -25,7 +25,7 @@ export default function Signup({ showToast }) {
       setLoading(false);
       showToast(error.message || 'Signup failed');
     } else {
-      window.location.href = '/home'; // Hard redirect
+      navigate('/home', { replace: true });
     }
     // On success: AuthContext's onAuthStateChange fires → ProtectedRoute sends to /home
     // Keep loading=true so user can't double-tap

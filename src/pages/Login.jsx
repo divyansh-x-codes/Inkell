@@ -32,7 +32,7 @@ export default function Login({ showToast }) {
       
       showToast(msg);
     } else {
-      window.location.href = '/home'; // Hard redirect for reliability
+      navigate('/home', { replace: true });
     }
     // On success: DON'T navigate manually.
     // AuthContext's onAuthStateChange will set user → ProtectedRoute auto-redirects to /home.
@@ -46,7 +46,7 @@ export default function Login({ showToast }) {
       setLoading(false);
       showToast(error.message || 'Google login failed');
     } else {
-      window.location.href = '/home'; // Hard redirect
+      navigate('/home', { replace: true });
     }
     // On success: Google OAuth redirects externally; the auth listener handles the rest.
   };
@@ -109,7 +109,7 @@ export default function Login({ showToast }) {
         <button 
           onClick={async () => {
              const { error } = await loginAsDemoUser();
-             if (!error) window.location.href = '/home';
+             if (!error) navigate('/home', { replace: true });
              else showToast(error.message || 'Demo login failed');
           }}
           style={{ 

@@ -279,15 +279,19 @@ export const deleteComment = async (commentId) => {
 };
 
 export const subscribeToComments = (postId, setComments) => {
-  const q = query(collection(db, 'comments'), where('post_id', '==', postId), orderBy('created_at', 'asc'));
+  // REMOVE strictly ordered query because null serverTimestamps are omitted from results
+  const q = query(collection(db, 'comments'), where('post_id', '==', postId));
   
   return onSnapshot(q, (snapshot) => {
     const comments = snapshot.docs.map(d => ({
       id: d.id,
       ...d.data(),
-      created_at: d.data().created_at?.toDate()?.toISOString() || new Date().toISOString()
+      created_at: d.data().created_at?.toDate ? d.data().created_at.toDate().toISOString() : (d.data().created_at || new Date().toISOString())
     }));
-    setComments(comments);
+    
+    // Manual sort to ensure instant visibility of new comments
+    const sorted = comments.sort((a,b) => new Date(a.created_at) - new Date(b.created_at));
+    setComments(sorted);
   });
 };
 
@@ -475,8 +479,7 @@ export const getFollowingList = async (userId) => {
 export const subscribeToConversations = (userId, callback) => {
   const q = query(
     collection(db, 'conversations'),
-    where('participants', 'array-contains', userId),
-    orderBy('last_message_at', 'desc')
+    where('participants', 'array-contains', userId)
   );
 
   return onSnapshot(q, async (snapshot) => {
@@ -488,7 +491,7 @@ export const subscribeToConversations = (userId, callback) => {
       return {
         id: docSnap.id,
         lastMessage: data.last_message,
-        lastMessageAt: data.last_message_at?.toDate()?.toISOString(),
+        lastMessageAt: data.last_message_at?.toDate ? data.last_message_at.toDate().toISOString() : (data.last_message_at || new Date().toISOString()),
         lastSenderId: data.last_sender_id,
         otherParticipant: {
           id: otherId,
@@ -498,7 +501,10 @@ export const subscribeToConversations = (userId, callback) => {
         }
       };
     }));
-    callback(convs);
+    
+    // Sort in JS to handle pending last_message_at
+    const sorted = convs.sort((a,b) => new Date(b.lastMessageAt) - new Date(a.lastMessageAt));
+    callback(sorted);
   });
 };
 
@@ -529,17 +535,19 @@ export const getOrCreateConversation = async (uid1, uid2) => {
 
 export const subscribeToMessages = (conversationId, callback) => {
   const q = query(
-    collection(db, 'conversations', conversationId, 'messages'),
-    orderBy('created_at', 'asc')
+    collection(db, 'conversations', conversationId, 'messages')
   );
 
   return onSnapshot(q, (snapshot) => {
     const msgs = snapshot.docs.map(d => ({
       id: d.id,
       ...d.data(),
-      created_at: d.data().created_at?.toDate()?.toISOString()
+      created_at: d.data().created_at?.toDate ? d.data().created_at.toDate().toISOString() : (d.data().created_at || new Date().toISOString())
     }));
-    callback(msgs);
+    
+    // Manual sort for real-time chat sync
+    const sorted = msgs.sort((a,b) => new Date(a.created_at) - new Date(b.created_at));
+    callback(sorted);
   });
 };
 
